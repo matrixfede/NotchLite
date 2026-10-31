@@ -74,6 +74,10 @@ enum DebugPreviews {
         snap("6-expanded-idle")
         model.tab = .settings
         snap("7-expanded-settings")
+        model.tab = .network
+        model.ambient.network.start()
+        RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+        snap("8-expanded-network")
     }
 
     /// `--render-live <dir>`: same views, real limits and stats from this Mac.

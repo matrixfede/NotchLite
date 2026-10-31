@@ -17,6 +17,8 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("CoreMediaIO"),
                 .linkedFramework("EventKit"),
+                .linkedFramework("CoreWLAN"),
+                .linkedFramework("SystemConfiguration"),
                 .linkedLibrary("sqlite3"),
             ]
         )

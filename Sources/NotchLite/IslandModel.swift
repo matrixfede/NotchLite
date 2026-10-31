@@ -9,7 +9,7 @@ enum HUD: Equatable {
 }
 
 enum IslandTab: String {
-    case now, agents, settings
+    case now, agents, network, settings
 }
 
 /// One side of the closed island, next to the physical notch.

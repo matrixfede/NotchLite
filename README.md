@@ -29,6 +29,10 @@ del wallpaper, niente framework privati nell'app).
 - **Clic su una sessione → la sua scheda** in iTerm2 o Terminale (via tty).
 - **Server di modelli locali**: pallino verde/rosso, controllo ogni minuto.
   Si aggiungono e rimuovono dall'ingranaggio nel notch → *Server locali*.
+- **Rete** (icona del globo, stile pannello Network di Omarchy): Wi-Fi o Ethernet
+  con banda, velocità e segnale, ping verso internet (1.1.1.1) e router, velocità
+  di ricezione/invio, dati scaricati/caricati, IP e gateway. Lavora solo mentre
+  la scheda è aperta.
 - **Microfono / fotocamera in uso**: pallino arancione / verde sul notch.
 - **Prossimo evento del calendario** (entro 12 ore) nella scheda Ora.
 - **Risposte rapide** (menu *Rispondi* sulla sessione) scritte nel terminale
@@ -102,6 +106,7 @@ I collector sono un port in Swift di quelli di
 | `IslandViews.swift` | interfaccia SwiftUI |
 | `MediaService.swift` + `Bridge/` | Now Playing via MediaRemote, ospitato da `/usr/bin/perl` (unico modo consentito da macOS 15.4+) |
 | `SystemServices.swift` | batteria (IOPS) e volume (CoreAudio), entrambi a notifiche |
+| `NetworkService.swift` | dati della scheda Rete (SystemConfiguration, CoreWLAN, `/sbin/ping`) |
 | `AgentService.swift` | sessioni live dagli eventi hook, installer degli hook |
 | `UsageService.swift` | aggiornamento dei collector e statistiche Claude/Codex |
 | `Collectors/` | un collector per provider, sul protocollo di `CollectorKit.swift` |

@@ -10,6 +10,7 @@ final class Ambient {
     let privacy = PrivacyMonitor()
     let calendar = CalendarService()
     let shelf = Shelf()
+    let network = NetworkService()
 }
 
 // MARK: File shelf

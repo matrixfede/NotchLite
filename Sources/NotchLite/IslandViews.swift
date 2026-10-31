@@ -172,6 +172,8 @@ private struct ExpandedView: View {
             Group {
                 if model.tab == .agents {
                     AgentsTab(model: model, usage: usage)
+                } else if model.tab == .network {
+                    NetworkTab(network: model.ambient.network)
                 } else if model.tab == .settings {
                     SettingsTab(settings: model.settings, servers: model.ambient.servers)
                 } else {
@@ -235,6 +237,9 @@ private struct ExpandedView: View {
             } else if battery.hasBattery {
                 BatteryLabel(battery: battery)
             }
+            ControlButton(symbol: "network", size: 11) { model.select(model.tab == .network ? .now : .network) }
+                .opacity(model.tab == .network ? 1 : 0.6)
+                .help("Rete")
             ControlButton(symbol: "gearshape.fill", size: 11) { model.select(model.tab == .settings ? .now : .settings) }
                 .opacity(model.tab == .settings ? 1 : 0.6)
                 .help("Impostazioni")
@@ -616,6 +621,66 @@ private struct BatteryLabel: View {
         case ..<88: return "battery.75"
         default: return "battery.100"
         }
+    }
+}
+
+// MARK: "Rete" tab (Omarchy-style network panel)
+
+private struct NetworkTab: View {
+    @ObservedObject var network: NetworkService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: network.interface == nil ? "wifi.slash" : network.wifi != nil ? "wifi" : "cable.connector")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(network.interface == nil ? "Non connesso" : network.wifi != nil ? "Wi-Fi" : "Ethernet")
+                    .font(.system(size: 12, weight: .semibold))
+                if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(secondaryText) }
+                Spacer()
+                if let name = network.interface {
+                    Text(name).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+                }
+            }
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                pair("Ping", ping(network.internetPing), "Router", ping(network.routerPing))
+                pair("Ricezione", network.downRate.map { bytes($0) + "/s" } ?? "--",
+                     "Invio", network.upRate.map { bytes($0) + "/s" } ?? "--")
+                pair("Scaricati", network.received > 0 ? bytes(Double(network.received)) : "--",
+                     "Caricati", network.sent > 0 ? bytes(Double(network.sent)) : "--")
+                pair("Indirizzo IP", network.ip ?? "--", "Gateway", network.gateway ?? "--")
+            }
+        }
+        .foregroundStyle(.white)
+        .onAppear { network.start() }
+        .onDisappear { network.stop() }
+    }
+
+    private var detail: String? {
+        guard let wifi = network.wifi else { return nil }
+        return [wifi.band, "\(Int(wifi.rate)) Mbit/s", "\(wifi.rssi) dBm"].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func pair(_ a: String, _ av: String, _ b: String, _ bv: String) -> some View {
+        GridRow {
+            Text(a).foregroundStyle(secondaryText)
+            Text(av).monospacedDigit().frame(maxWidth: .infinity, alignment: .leading)
+            Text(b).foregroundStyle(secondaryText)
+            Text(bv).monospacedDigit().frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.system(size: 11))
+        .lineLimit(1)
+    }
+
+    private func ping(_ ping: Ping) -> String {
+        guard let ms = ping.ms else { return ping.loss == 100 ? "nessuna risposta" : "--" }
+        let value = ms < 10 ? String(format: "%.1f ms", ms) : "\(Int(ms.rounded())) ms"
+        if let loss = ping.loss, loss > 0 { return value + " · \(Int(loss))% persi" }
+        return value
+    }
+
+    private func bytes(_ value: Double) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .decimal)
     }
 }
 
