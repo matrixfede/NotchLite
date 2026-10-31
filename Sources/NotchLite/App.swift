@@ -95,6 +95,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.settings.agentSounds { NSSound(named: "Sosumi")?.play() }
         }
 
+        ambient.timer.onFinish = { [weak self] label in
+            self?.model.show(.timer(label: label), for: 8)
+            NSSound(named: "Glass")?.play()
+        }
+
         battery.start()
         ambient.servers.start()
         AgentHooks.refreshScriptIfInstalled()
@@ -223,6 +228,13 @@ enum SettingsActions {
             return
         }
         servers.add(name: values[0].isEmpty ? (url.host ?? "Server") : values[0], url: url)
+    }
+
+    static func addTimer(to timer: TimerService) {
+        guard let values = askText(title: "Nuovo promemoria", info: "Il notch ti avvisa allo scadere.",
+                                   placeholders: ["Minuti (es. 40)", "Testo (es. Togli la pasta)"]) else { return }
+        guard let minutes = Double(values[0].replacingOccurrences(of: ",", with: ".")), minutes > 0, minutes <= 24 * 60 else { return }
+        timer.start(minutes: minutes, label: values[1])
     }
 
     static func addReply(to settings: Settings) {

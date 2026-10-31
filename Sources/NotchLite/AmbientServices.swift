@@ -11,6 +11,8 @@ final class Ambient {
     let calendar = CalendarService()
     let shelf = Shelf()
     let network = NetworkService()
+    let system = SystemStats()
+    let timer = TimerService()
 }
 
 // MARK: File shelf
@@ -293,5 +295,52 @@ final class CalendarService: ObservableObject {
                           color: $0.calendar.color ?? .systemBlue)
         }
         if upcoming != next { next = upcoming }
+    }
+}
+
+// MARK: Timer / reminder
+
+/// One countdown with an optional reminder text; survives a restart.
+@MainActor
+final class TimerService: ObservableObject {
+    @Published private(set) var endsAt: Date?
+    @Published private(set) var label = ""
+    var onFinish: ((String) -> Void)?
+
+    private static let key = "timer"
+    private var work: DispatchWorkItem?
+
+    init() {
+        if let saved = UserDefaults.standard.dictionary(forKey: Self.key),
+           let end = saved["end"] as? Double, end > Date().timeIntervalSince1970 {
+            schedule(Date(timeIntervalSince1970: end), label: saved["label"] as? String ?? "")
+        }
+    }
+
+    func start(minutes: Double, label: String) {
+        schedule(Date().addingTimeInterval(minutes * 60), label: label)
+        UserDefaults.standard.set(["end": endsAt!.timeIntervalSince1970, "label": label], forKey: Self.key)
+    }
+
+    func cancel() {
+        work?.cancel()
+        endsAt = nil
+        UserDefaults.standard.removeObject(forKey: Self.key)
+    }
+
+    private func schedule(_ end: Date, label: String) {
+        work?.cancel()
+        endsAt = end
+        self.label = label
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let label = self.label
+                self.cancel()
+                self.onFinish?(label)
+            }
+        }
+        self.work = work
+        DispatchQueue.main.asyncAfter(wallDeadline: .now() + end.timeIntervalSinceNow, execute: work)
     }
 }

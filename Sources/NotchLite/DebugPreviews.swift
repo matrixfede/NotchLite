@@ -78,6 +78,18 @@ enum DebugPreviews {
         model.ambient.network.start()
         RunLoop.main.run(until: Date().addingTimeInterval(2.5))
         snap("8-expanded-network")
+        model.tab = .system
+        model.ambient.system.start()
+        RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+        snap("9-expanded-system")
+        model.ambient.timer.start(minutes: 25, label: "Togli la pasta")
+        model.tab = .now
+        snap("10-expanded-timer")
+        model.debugSetExpanded(false)
+        snap("11-compact-timer")
+        model.show(.timer(label: "Togli la pasta"))
+        snap("12-compact-timer-done")
+        model.ambient.timer.cancel()
     }
 
     /// `--render-live <dir>`: same views, real limits and stats from this Mac.

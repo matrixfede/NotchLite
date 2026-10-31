@@ -8,8 +8,10 @@ enum AgentLauncher {
     private static let terminal = "com.apple.Terminal"
 
     /// Opens a new terminal window running an agent (Omarchy's ">_" button).
-    static func launch(_ agent: AgentName) {
-        let command = agent.rawValue
+    static func launch(_ agent: AgentName) { open(agent.rawValue) }
+
+    /// Opens a new terminal window running `command` (callers pass safe text only).
+    static func open(_ command: String) {
         if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iTerm) != nil {
             run("""
             tell application "iTerm"

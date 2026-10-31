@@ -32,7 +32,15 @@ del wallpaper, niente framework privati nell'app).
 - **Rete** (scheda accanto a Ora e Agenti, stile pannello Network di Omarchy): Wi-Fi o Ethernet
   con banda, velocità e segnale, ping verso internet (1.1.1.1) e router, velocità
   di ricezione/invio, dati scaricati/caricati, IP e gateway. Lavora solo mentre
-  la scheda è aperta.
+  la scheda è aperta. Riconosce le VPN. Pulsante **Test velocità** (`networkQuality`
+  di macOS, circa 20 s). Sezione **Tailscale**: macchine online e offline con IP,
+  clic per copiare l'IP, icona del terminale per aprire `ssh`.
+- **Sistema** (clic sulla batteria in alto a destra, stile pannello Power di
+  Omarchy): CPU, memoria, batteria e autonomia, consumo in watt, salute, cicli e
+  stato termico. Si aggiorna ogni 2 s solo mentre è aperto.
+- **Timer e promemoria** nella scheda Ora: 5, 15 o 25 minuti, oppure un
+  promemoria con testo. Conto alla rovescia sul notch chiuso, avviso e suono alla
+  fine. Resta attivo anche se riavvii l'app.
 - **Microfono / fotocamera in uso**: pallino arancione / verde sul notch.
 - **Prossimo evento del calendario** (entro 12 ore) nella scheda Ora.
 - **Risposte rapide** (menu *Rispondi* sulla sessione) scritte nel terminale
@@ -106,7 +114,8 @@ I collector sono un port in Swift di quelli di
 | `IslandViews.swift` | interfaccia SwiftUI |
 | `MediaService.swift` + `Bridge/` | Now Playing via MediaRemote, ospitato da `/usr/bin/perl` (unico modo consentito da macOS 15.4+) |
 | `SystemServices.swift` | batteria (IOPS) e volume (CoreAudio), entrambi a notifiche |
-| `NetworkService.swift` | dati della scheda Rete (SystemConfiguration, CoreWLAN, `/sbin/ping`) |
+| `SystemStats.swift` | dati del pannello Sistema (Mach, IOKit) |
+| `NetworkService.swift` | dati della scheda Rete (SystemConfiguration, CoreWLAN, `/sbin/ping`, `networkQuality`, Tailscale) |
 | `AgentService.swift` | sessioni live dagli eventi hook, installer degli hook |
 | `UsageService.swift` | aggiornamento dei collector e statistiche Claude/Codex |
 | `Collectors/` | un collector per provider, sul protocollo di `CollectorKit.swift` |

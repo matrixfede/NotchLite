@@ -6,10 +6,11 @@ enum HUD: Equatable {
     case charging(level: Int, plugged: Bool)
     case lowBattery(level: Int)
     case usage(agent: String, percent: Double)
+    case timer(label: String)
 }
 
 enum IslandTab: String {
-    case now, agents, network, settings
+    case now, agents, network, system, settings
 }
 
 /// One side of the closed island, next to the physical notch.
@@ -19,6 +20,8 @@ enum WingContent: Equatable {
     case equalizer
     case agentGlyph(AgentName)
     case working(count: Int)
+    case timer
+    case countdown(Date)
 }
 
 /// What the closed island shows.
@@ -66,7 +69,7 @@ final class IslandModel: ObservableObject {
         // The island geometry depends on these, so re-render when they change.
         let publishers = [media.objectWillChange, agents.objectWillChange, settings.objectWillChange, usage.objectWillChange,
                           ambient.servers.objectWillChange, ambient.privacy.objectWillChange, ambient.calendar.objectWillChange,
-                          ambient.shelf.objectWillChange]
+                          ambient.shelf.objectWillChange, ambient.timer.objectWillChange]
         for publisher in publishers {
             forwarders.append(publisher.sink { [weak self] _ in self?.objectWillChange.send() })
         }
@@ -88,14 +91,16 @@ final class IslandModel: ObservableObject {
         case (true, true): return .wings(leading: .artwork, trailing: .working(count: working))
         case (true, false): return .wings(leading: .artwork, trailing: .equalizer)
         case (false, true): return .wings(leading: .agentGlyph(agents.workingAgent ?? .claude), trailing: .working(count: working))
-        case (false, false): return .none
+        case (false, false):
+            if let end = ambient.timer.endsAt { return .wings(leading: .timer, trailing: .countdown(end)) }
+            return .none
         }
     }
 
     var wingWidth: CGFloat {
         switch compact {
         case .none: 0
-        case .alert: 76
+        case .alert, .hud(.timer): 76
         case .hud(.charging), .hud(.lowBattery), .hud(.usage): 50
         case .hud, .wings: notchSize.height + 8
         }

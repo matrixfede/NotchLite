@@ -123,6 +123,12 @@ private struct CompactView: View {
             percentText(level, color: .red)
         case .hud(.usage(_, let percent)):
             percentText(Int(percent * 100), color: meterColor(percent))
+        case .hud(.timer(let label)):
+            Text(label.isEmpty ? "Finito" : label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .padding(.horizontal, 4)
         case .wings(_, let content):
             wing(content)
         }
@@ -153,6 +159,16 @@ private struct CompactView: View {
                         .foregroundStyle(.white)
                 }
             }
+        case .timer:
+            Image(systemName: "timer")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+        case .countdown(let end):
+            Text(timerInterval: Date()...max(end, Date()), countsDown: true)
+                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 }
@@ -172,6 +188,8 @@ private struct ExpandedView: View {
             Group {
                 if model.tab == .agents {
                     AgentsTab(model: model, usage: usage)
+                } else if model.tab == .system {
+                    SystemTab(stats: model.ambient.system, battery: battery)
                 } else if model.tab == .network {
                     NetworkTab(network: model.ambient.network)
                 } else if model.tab == .settings {
@@ -207,6 +225,7 @@ private struct ExpandedView: View {
             if model.visibleSessions.isEmpty && !model.showsMusic {
                 IdleCard(model: model, media: media, agents: agents)
             }
+            TimerRow(timer: model.ambient.timer)
             ShelfRow(shelf: model.ambient.shelf)
             InfoStrip(calendar: model.ambient.calendar, servers: model.ambient.servers)
         }
@@ -238,7 +257,10 @@ private struct ExpandedView: View {
                 .fixedSize()
                 .help("Avvia un agente")
             } else if battery.hasBattery {
-                BatteryLabel(battery: battery)
+                Button { model.select(model.tab == .system ? .now : .system) } label: { BatteryLabel(battery: battery) }
+                    .buttonStyle(.plain)
+                    .opacity(model.tab == .system || model.tab == .now ? 1 : 0.8)
+                    .help("Sistema")
             }
             ControlButton(symbol: "gearshape.fill", size: 11) { model.select(model.tab == .settings ? .now : .settings) }
                 .opacity(model.tab == .settings ? 1 : 0.6)
@@ -632,9 +654,11 @@ private struct NetworkTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
-                Image(systemName: network.interface == nil ? "wifi.slash" : network.wifi != nil ? "wifi" : "cable.connector")
+                Image(systemName: network.interface == nil ? "wifi.slash" : network.isTunnel ? "lock.shield"
+                      : network.wifi != nil ? "wifi" : "cable.connector")
                     .font(.system(size: 12, weight: .semibold))
-                Text(network.interface == nil ? "Non connesso" : network.wifi != nil ? "Wi-Fi" : "Ethernet")
+                Text(network.interface == nil ? "Non connesso" : network.isTunnel ? (network.wifi != nil ? "VPN su Wi-Fi" : "VPN")
+                     : network.wifi != nil ? "Wi-Fi" : "Ethernet")
                     .font(.system(size: 12, weight: .semibold))
                 if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(secondaryText) }
                 Spacer()
@@ -643,12 +667,26 @@ private struct NetworkTab: View {
                 }
             }
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                pair("Ping", ping(network.internetPing), "Router", ping(network.routerPing))
+                pair("Ping", ping(network.internetPing), "Router", network.isTunnel ? "--" : ping(network.routerPing))
                 pair("Ricezione", network.downRate.map { bytes($0) + "/s" } ?? "--",
                      "Invio", network.upRate.map { bytes($0) + "/s" } ?? "--")
                 pair("Scaricati", network.received > 0 ? bytes(Double(network.received)) : "--",
                      "Caricati", network.sent > 0 ? bytes(Double(network.sent)) : "--")
                 pair("Indirizzo IP", network.ip ?? "--", "Gateway", network.gateway ?? "--")
+            }
+            HStack(spacing: 8) {
+                PillButton(title: network.isTesting ? "Test in corso…" : "Test velocità", color: .white.opacity(0.14)) {
+                    network.speedTest()
+                }
+                .disabled(network.isTesting)
+                if let speed = network.speed {
+                    Text("↓ \(mbit(speed.down))  ↑ \(mbit(speed.up))  ·  \(Int(speed.latency)) ms")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(secondaryText)
+                }
+            }
+            if let tailnet = network.tailnet {
+                TailnetList(ip: tailnet.ip, peers: tailnet.peers)
             }
         }
         .foregroundStyle(.white)
@@ -681,6 +719,137 @@ private struct NetworkTab: View {
 
     private func bytes(_ value: Double) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .decimal)
+    }
+
+    private func mbit(_ bits: Double) -> String { "\(Int((bits / 1_000_000).rounded())) Mbit/s" }
+}
+
+/// Tailscale machines: a click copies the IP, the terminal button opens `ssh`.
+private struct TailnetList: View {
+    let ip: String
+    let peers: [TailnetPeer]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text("Tailscale").font(.system(size: 12, weight: .semibold))
+                Text(ip.isEmpty ? "spento" : ip).font(.system(size: 11).monospacedDigit()).foregroundStyle(secondaryText)
+                Spacer()
+            }
+            ForEach(peers.prefix(8)) { peer in
+                HStack(spacing: 7) {
+                    Circle().fill(peer.online ? Color.green : Color.white.opacity(0.25)).frame(width: 6, height: 6)
+                    Text(peer.name).lineLimit(1)
+                    Spacer()
+                    Text(peer.ip).monospacedDigit().foregroundStyle(secondaryText)
+                    Button { AgentLauncher.open("ssh \(peer.host)") } label: {
+                        Image(systemName: "apple.terminal").font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!peer.online)
+                    .opacity(peer.online ? 0.8 : 0.25)
+                    .help("ssh \(peer.host)")
+                }
+                .font(.system(size: 11))
+                .opacity(peer.online ? 1 : 0.5)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(peer.ip, forType: .string)
+                }
+                .help("Clic per copiare l'IP")
+            }
+        }
+    }
+}
+
+// MARK: "Sistema" panel (Omarchy-style power panel, opened from the battery)
+
+private struct SystemTab: View {
+    @ObservedObject var stats: SystemStats
+    @ObservedObject var battery: BatteryService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            meter("CPU", stats.cpu ?? 0, stats.cpu.map { "\(Int(($0 * 100).rounded()))%" } ?? "--")
+            let memory = Double(stats.memoryUsed) / Double(max(stats.memoryTotal, 1))
+            meter("Memoria", memory, "\(gigabytes(stats.memoryUsed)) di \(gigabytes(stats.memoryTotal))")
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                pair("Batteria", "\(battery.level)%" + (battery.isPluggedIn ? " · in carica" : ""),
+                     battery.isPluggedIn ? "Alla carica" : "Autonomia", stats.minutesLeft.map(duration) ?? "--")
+                pair("Consumo", stats.watts.map { String(format: "%.1f W", $0) } ?? "--",
+                     "Salute", stats.health.map { "\($0)%" } ?? "--")
+                pair("Cicli", stats.cycles.map(String.init) ?? "--", "Temperatura", thermal)
+            }
+        }
+        .foregroundStyle(.white)
+        .onAppear { stats.start() }
+        .onDisappear { stats.stop() }
+    }
+
+    private func meter(_ title: String, _ value: Double, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title).foregroundStyle(secondaryText).frame(width: 70, alignment: .leading)
+            LevelBar(value: value, color: meterColor(value)).frame(height: 6)
+            Text(text).monospacedDigit().frame(width: 110, alignment: .trailing)
+        }
+        .font(.system(size: 11))
+    }
+
+    private func pair(_ a: String, _ av: String, _ b: String, _ bv: String) -> some View {
+        GridRow {
+            Text(a).foregroundStyle(secondaryText)
+            Text(av).monospacedDigit().frame(maxWidth: .infinity, alignment: .leading)
+            Text(b).foregroundStyle(secondaryText)
+            Text(bv).monospacedDigit().frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.system(size: 11))
+        .lineLimit(1)
+    }
+
+    private var thermal: String {
+        switch stats.thermal {
+        case .nominal: "normale"
+        case .fair: "calda"
+        case .serious: "molto calda"
+        case .critical: "critica"
+        @unknown default: "--"
+        }
+    }
+
+    private func gigabytes(_ bytes: UInt64) -> String { String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
+    private func duration(_ minutes: Int) -> String { "\(minutes / 60) h \(minutes % 60) min" }
+}
+
+// MARK: Timer row ("Ora" tab)
+
+private struct TimerRow: View {
+    @ObservedObject var timer: TimerService
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "timer").font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
+            if let end = timer.endsAt {
+                Text(timer.label.isEmpty ? "Timer" : timer.label).lineLimit(1)
+                Spacer()
+                Text(timerInterval: Date()...max(end, Date()), countsDown: true)
+                    .monospacedDigit()
+                    .frame(width: 60, alignment: .trailing)
+                Button { timer.cancel() } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(secondaryText)
+                    .help("Annulla")
+            } else {
+                Text("Timer").foregroundStyle(secondaryText)
+                Spacer()
+                ForEach([5, 15, 25], id: \.self) { minutes in
+                    PillButton(title: "\(minutes) min", color: .white.opacity(0.1)) { timer.start(minutes: Double(minutes), label: "") }
+                }
+                PillButton(title: "Promemoria…", color: .white.opacity(0.1)) { SettingsActions.addTimer(to: timer) }
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.white)
     }
 }
 
@@ -1213,6 +1382,7 @@ private extension HUD {
         case .charging(_, let plugged): return plugged ? "bolt.fill" : "powerplug"
         case .lowBattery: return "battery.25"
         case .usage: return "gauge.with.dots.needle.67percent"
+        case .timer: return "bell.fill"
         }
     }
 
@@ -1222,6 +1392,7 @@ private extension HUD {
         case .charging(_, let plugged): plugged ? .green : .white
         case .lowBattery: .red
         case .usage(_, let percent): meterColor(percent)
+        case .timer: .orange
         }
     }
 }

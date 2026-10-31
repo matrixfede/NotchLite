@@ -7,11 +7,27 @@ struct Ping: Equatable {
     var loss: Double?
 }
 
+struct TailnetPeer: Identifiable, Equatable {
+    var id: String { host }
+    let name: String
+    let host: String // MagicDNS short name, safe for `ssh`
+    let ip: String
+    let online: Bool
+}
+
+struct SpeedResult: Equatable {
+    let down: Double // bit/s
+    let up: Double
+    let latency: Double // ms
+}
+
 /// Network panel data, like Omarchy's: link, addresses, throughput and ping.
 /// Runs only while the "Rete" tab is on screen.
 @MainActor
 final class NetworkService: ObservableObject {
     @Published private(set) var interface: String?
+    /// The primary route goes through a VPN tunnel (utun/ppp/ipsec).
+    var isTunnel: Bool { ["utun", "ppp", "ipsec"].contains { interface?.hasPrefix($0) == true } }
     @Published private(set) var wifi: (rssi: Int, rate: Double, band: String)?
     @Published private(set) var ip: String?
     @Published private(set) var gateway: String?
@@ -21,6 +37,10 @@ final class NetworkService: ObservableObject {
     @Published private(set) var upRate: Double?
     @Published private(set) var routerPing = Ping()
     @Published private(set) var internetPing = Ping()
+    /// nil when Tailscale isn't installed; empty IP while it is off.
+    @Published private(set) var tailnet: (ip: String, peers: [TailnetPeer])?
+    @Published private(set) var speed: SpeedResult?
+    @Published private(set) var isTesting = false
 
     static let internetHost = "1.1.1.1"
     private let store = SCDynamicStoreCreate(nil, "NotchLite" as CFString, nil, nil)
@@ -51,6 +71,7 @@ final class NetworkService: ObservableObject {
         readLink()
         readCounters()
         if ticks % 5 == 0 { ping() }
+        if ticks % 10 == 0 { readTailnet() }
         ticks += 1
     }
 
@@ -64,7 +85,8 @@ final class NetworkService: ObservableObject {
         if address != ip { ip = address }
 
         let radio = CWWiFiClient.shared().interface()
-        if let radio, radio.interfaceName == name, let channel = radio.wlanChannel() {
+        // Under a VPN the Wi-Fi radio still carries the traffic.
+        if let radio, radio.interfaceName == name || isTunnel, let channel = radio.wlanChannel() {
             let band = switch channel.channelBand {
             case .band2GHz: "2,4 GHz"
             case .band5GHz: "5 GHz"
@@ -118,7 +140,7 @@ final class NetworkService: ObservableObject {
     private func ping() {
         guard !pinging else { return }
         pinging = true
-        let router = gateway
+        let router = isTunnel ? nil : gateway // a tunnel's "router" is itself
         DispatchQueue.global(qos: .utility).async {
             let group = DispatchGroup()
             var routerResult = Ping(), internetResult = Ping()
@@ -138,17 +160,71 @@ final class NetworkService: ObservableObject {
         }
     }
 
-    /// Three quick pings with /sbin/ping (no root needed): average and loss.
-    nonisolated private static func ping(_ host: String) -> Ping {
+    private static let tailscale = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+    private func readTailnet() {
+        guard FileManager.default.isExecutableFile(atPath: Self.tailscale) else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let data = Self.run(Self.tailscale, ["status", "--json"])
+            var result: (ip: String, peers: [TailnetPeer])?
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if json != nil { result = ("", []) }
+            if let json, json["BackendState"] as? String == "Running" {
+                let me = (json["Self"] as? [String: Any])?["TailscaleIPs"] as? [String]
+                let peers = (json["Peer"] as? [String: [String: Any]] ?? [:]).values.compactMap { peer -> TailnetPeer? in
+                    guard let ip = (peer["TailscaleIPs"] as? [String])?.first,
+                          let host = (peer["DNSName"] as? String)?.split(separator: ".").first.map(String.init),
+                          host.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil else { return nil }
+                    return TailnetPeer(name: peer["HostName"] as? String ?? host, host: host, ip: ip,
+                                       online: peer["Online"] as? Bool ?? false)
+                }
+                .sorted { ($0.online ? 0 : 1, $0.name.lowercased()) < ($1.online ? 0 : 1, $1.name.lowercased()) }
+                result = (me?.first ?? "", peers)
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if self.tailnet?.ip != result?.ip || self.tailnet?.peers != result?.peers { self.tailnet = result }
+                }
+            }
+        }
+    }
+
+    /// macOS's own `networkQuality` (about 20 s); runs on demand only.
+    func speedTest() {
+        guard !isTesting else { return }
+        isTesting = true
+        DispatchQueue.global(qos: .utility).async {
+            let data = Self.run("/usr/bin/networkQuality", ["-c"])
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let result = json.flatMap { json -> SpeedResult? in
+                guard let down = json["dl_throughput"] as? Double, let up = json["ul_throughput"] as? Double else { return nil }
+                return SpeedResult(down: down, up: up, latency: json["base_rtt"] as? Double ?? 0)
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.isTesting = false
+                    self.speed = result
+                }
+            }
+        }
+    }
+
+    nonisolated private static func run(_ path: String, _ arguments: [String]) -> Data {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-        process.arguments = ["-n", "-q", "-c", "3", "-i", "0.2", "-t", "2", host]
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return Ping() }
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        guard (try? process.run()) != nil else { return Data() }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        return data
+    }
+
+    /// Three quick pings with /sbin/ping (no root needed): average and loss.
+    nonisolated private static func ping(_ host: String) -> Ping {
+        let output = String(decoding: run("/sbin/ping", ["-n", "-q", "-c", "3", "-i", "0.2", "-t", "2", host]), as: UTF8.self)
         var result = Ping()
         for line in output.split(separator: "\n") {
             if line.contains("packet loss"), let field = line.split(separator: ",").first(where: { $0.contains("%") }) {
