@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch = NotchController(model: model)
         notch?.start()
         SettingsActions.servers = ambient.servers
+        SettingsActions.onDialog = { [weak self] open in self?.notch?.setHidden(open) }
         menu = MenuController(usage: usage)
 
         applySettings()
@@ -218,7 +219,7 @@ enum SettingsActions {
             let error = NSAlert()
             error.messageText = "Indirizzo non valido"
             error.informativeText = "Usa un indirizzo come http://192.168.1.10:8080"
-            error.runModal()
+            present(error)
             return
         }
         servers.add(name: values[0].isEmpty ? (url.host ?? "Server") : values[0], url: url)
@@ -250,8 +251,7 @@ enum SettingsActions {
         alert.addButton(withTitle: "Aggiungi")
         alert.addButton(withTitle: "Annulla")
         alert.window.initialFirstResponder = fields.first
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        guard present(alert) == .alertFirstButtonReturn else { return nil }
         return fields.map { $0.stringValue.trimmingCharacters(in: .whitespaces) }
     }
 
@@ -272,8 +272,19 @@ enum SettingsActions {
             alert.messageText = "Operazione non riuscita"
             alert.informativeText = error.localizedDescription
         }
+        present(alert)
+    }
+
+    /// Hides the notch while a dialog is open: its panel sits above every
+    /// window and would cover the dialog and take its clicks.
+    static var onDialog: ((Bool) -> Void)?
+
+    @discardableResult
+    private static func present(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        onDialog?(true)
+        defer { onDialog?(false) }
         NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        return alert.runModal()
     }
 
     static var launchesAtLogin: Bool { SMAppService.mainApp.status == .enabled }

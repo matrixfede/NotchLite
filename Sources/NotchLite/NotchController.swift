@@ -47,6 +47,12 @@ final class NotchController {
         panel.contentView = hosting
     }
 
+    func setHidden(_ hidden: Bool) {
+        model.setHovering(false)
+        panel.ignoresMouseEvents = true // clicks pass through until the pointer is back on the island
+        hidden ? panel.orderOut(nil) : panel.orderFrontRegardless()
+    }
+
     func start() {
         placeOnScreen()
         panel.orderFrontRegardless()
