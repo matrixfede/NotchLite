@@ -405,7 +405,7 @@ private struct ProgressRow: View {
             let position = track.position(at: context.date)
             let fraction = drag.value ?? (track.duration > 0 ? position / track.duration : 0)
             HStack(spacing: 8) {
-                Text(format(drag.value.map { $0 * track.duration } ?? position))
+                Text(track.duration > 0 ? format(drag.value.map { $0 * track.duration } ?? position) : "--:--")
                 GeometryReader { geometry in
                     LevelBar(value: fraction, color: tint)
                         .frame(height: 4)

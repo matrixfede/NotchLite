@@ -42,6 +42,11 @@ static void emit(NSDictionary *object) {
 
 static id orNull(id value) { return value ?: [NSNull null]; }
 
+// Live streams in browsers report an infinite duration, which JSON can't hold.
+static id finiteOrNull(id value) {
+    return [value isKindOfClass:NSNumber.class] && isfinite([value doubleValue]) ? value : [NSNull null];
+}
+
 // Full-size covers can be megabytes: send a 192 px JPEG instead.
 static NSData *thumbnail(NSData *data) {
     CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
@@ -81,9 +86,9 @@ static void publish(NSDictionary *info, BOOL playing, int pid) {
         @"title": title,
         @"artist": orNull(artist),
         @"album": orNull(info[@"kMRMediaRemoteNowPlayingInfoAlbum"]),
-        @"duration": orNull(info[@"kMRMediaRemoteNowPlayingInfoDuration"]),
-        @"elapsed": orNull(info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"]),
-        @"rate": orNull(info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"]),
+        @"duration": finiteOrNull(info[@"kMRMediaRemoteNowPlayingInfoDuration"]),
+        @"elapsed": finiteOrNull(info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"]),
+        @"rate": finiteOrNull(info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"]),
         @"timestamp": stamp ? @([stamp timeIntervalSince1970]) : [NSNull null],
         @"playing": @(playing),
         @"bundleID": orNull(app.bundleIdentifier),

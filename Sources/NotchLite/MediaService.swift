@@ -38,7 +38,6 @@ final class MediaService: ObservableObject {
     private var buffer = Data()
     private var running = false
     private var restartDelay: TimeInterval = 1
-    private var silentExits = 0 // bridge exits without a single message
     private var restartWork: DispatchWorkItem?
     private var artworkIdentity: String?
 
@@ -182,8 +181,9 @@ final class MediaService: ObservableObject {
         input = nil
         buffer.removeAll()
         guard running else { return }
-        silentExits += 1
-        if status == 2 || silentExits >= 5 {
+        // Status 2: MediaRemote unavailable on this macOS, give up. Anything
+        // else (e.g. a crash on odd metadata) retries with backoff, up to 30 s.
+        if status == 2 {
             NSLog("NotchLite: media bridge unavailable (status \(status))")
             return
         }
@@ -202,7 +202,6 @@ final class MediaService: ObservableObject {
 
     private func consume(_ data: Data) {
         guard running, !data.isEmpty else { return }
-        silentExits = 0
         buffer.append(data)
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]
