@@ -28,18 +28,18 @@ del wallpaper, niente framework privati nell'app).
   attuale il limite si esaurisce prima del reset.
 - **Clic su una sessione → la sua scheda** in iTerm2 o Terminale (via tty).
 - **Server di modelli locali**: pallino verde/rosso, controllo ogni minuto.
-  Si aggiungono e rimuovono dal menu → *Server locali*.
+  Si aggiungono e rimuovono dall'ingranaggio nel notch → *Server locali*.
 - **Microfono / fotocamera in uso**: pallino arancione / verde sul notch.
 - **Prossimo evento del calendario** (entro 12 ore) nella scheda Ora.
 - **Risposte rapide** (menu *Rispondi* sulla sessione) scritte nel terminale
-  dell'agente; l'elenco si modifica dal menu → *Risposte rapide*.
+  dell'agente; l'elenco si modifica dall'ingranaggio nel notch → *Risposte rapide*.
 - **Interrompi**: preme Esc nella scheda iTerm dell'agente al lavoro.
 - **Ripiano file**: trascina file sul notch, poi trascinali fuori, clic per
   aprirli, clic destro per rimuoverli.
 - **Statistiche per agente** nella scheda Agenti (token oggi/settimana, prompt, modello).
-- Si nasconde da solo nelle app a schermo intero. Avvio al login dal menu.
+- Si nasconde da solo nelle app a schermo intero. Avvio al login dall'ingranaggio.
 
-Passa col mouse sul notch per espanderla. Impostazioni dall'icona nella menu bar.
+Passa col mouse sul notch per espanderla. Impostazioni dall'ingranaggio nel notch; l'icona nella menu bar serve solo a chiudere l'app.
 
 ## Build
 
@@ -52,7 +52,7 @@ Servono solo i Command Line Tools (non Xcode):
 
 ## Hook Claude Code / Codex
 
-Dal menu → *Installa hook Claude Code / Codex…*, oppure:
+Dall'ingranaggio nel notch → *Hook agenti*, oppure:
 
 ```sh
 /Applications/NotchLite.app/Contents/MacOS/NotchLite --install-hooks
@@ -96,7 +96,7 @@ I collector sono un port in Swift di quelli di
 
 | File | Ruolo |
 |---|---|
-| `App.swift` | avvio, menu bar, impostazioni |
+| `App.swift` | avvio, icona menu bar, impostazioni |
 | `NotchController.swift` | finestra overlay, posizione sul notch, hover/click-through |
 | `IslandModel.swift` | stato dell'isola (compatta/espansa, priorità attività, dimensioni) |
 | `IslandViews.swift` | interfaccia SwiftUI |

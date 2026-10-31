@@ -100,7 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentHooks.refreshScriptIfInstalled()
         notch = NotchController(model: model)
         notch?.start()
-        menu = MenuController(settings: settings, usage: usage, servers: ambient.servers)
+        SettingsActions.servers = ambient.servers
+        menu = MenuController(usage: usage)
 
         applySettings()
         settingsObserver = settings.objectWillChange.sink { [weak self] _ in
@@ -170,22 +171,21 @@ final class Settings: ObservableObject {
     }
 }
 
+/// Menu-bar icon: only quits the app (settings live in the notch).
 @MainActor
-final class MenuController: NSObject, NSMenuDelegate {
-    private let settings: Settings
+final class MenuController: NSObject {
     private let usage: UsageService
-    private let servers: ServerMonitor
     private var urgentObserver: AnyCancellable?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let menu = NSMenu()
 
-    init(settings: Settings, usage: UsageService, servers: ServerMonitor) {
-        self.settings = settings
+    init(usage: UsageService) {
         self.usage = usage
-        self.servers = servers
         super.init()
         updateIcon(urgent: false)
-        menu.delegate = self
+        let menu = NSMenu()
+        let quit = NSMenuItem(title: "Esci da NotchLite", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        menu.addItem(quit)
         statusItem.menu = menu
         // Like Omarchy's bar icon: turns urgent when a limit reaches 90%.
         urgentObserver = usage.$usage.sink { [weak self] _ in
@@ -202,75 +202,16 @@ final class MenuController: NSObject, NSMenuDelegate {
             statusItem.button?.title = urgent ? "!" : "◗"
         }
     }
+}
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        addToggle("Musica", settings.music) { $0.music.toggle() }
-        addToggle("Batteria e ricarica", settings.battery) { $0.battery.toggle() }
-        addToggle("HUD volume", settings.volumeHUD) { $0.volumeHUD.toggle() }
-        addToggle("Sessioni agenti live", settings.agentSessions) { $0.agentSessions.toggle() }
-        addToggle("Limiti e statistiche agenti", settings.agentLimits) { $0.agentLimits.toggle() }
-        addToggle("Approva i permessi dal notch", settings.approveFromNotch) { $0.approveFromNotch.toggle() }
-        addToggle("Suoni avvisi", settings.agentSounds) { $0.agentSounds.toggle() }
-        addToggle("Prossimo evento del calendario", settings.calendar) { $0.calendar.toggle() }
-        addToggle("Indicatore microfono e fotocamera", settings.privacyDots) { $0.privacyDots.toggle() }
-        menu.addItem(serversItem())
-        menu.addItem(repliesItem())
-        menu.addItem(.separator())
+/// What the notch settings tab does beyond flipping a preference.
+@MainActor
+enum SettingsActions {
+    static var servers: ServerMonitor?
 
-        for agent in AgentName.allCases {
-            menu.addItem(item("Nuova sessione \(agent.displayName)") { AgentLauncher.launch(agent) })
-        }
-        let hooksInstalled = AgentHooks.isInstalled()
-        menu.addItem(item(hooksInstalled ? "Rimuovi hook Claude Code / Codex" : "Installa hook Claude Code / Codex…") { [weak self] in
-            self?.toggleHooks(installed: hooksInstalled)
-        })
-        let loginItem = item("Avvia al login") { Self.toggleLaunchAtLogin() }
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(loginItem)
-        menu.addItem(.separator())
-        menu.addItem(item("Esci da NotchLite") { NSApp.terminate(nil) })
-    }
-
-    private func addToggle(_ title: String, _ isOn: Bool, _ change: @escaping (Settings) -> Void) {
-        let menuItem = item(title) { [weak self] in
-            guard let self else { return }
-            change(self.settings)
-        }
-        menuItem.state = isOn ? .on : .off
-        menu.addItem(menuItem)
-    }
-
-    private func item(_ title: String, action: @escaping () -> Void) -> NSMenuItem {
-        let menuItem = NSMenuItem(title: title, action: #selector(ClosureTarget.invoke), keyEquivalent: "")
-        let target = ClosureTarget(action)
-        menuItem.target = target
-        menuItem.representedObject = target // keeps the target alive with the item
-        return menuItem
-    }
-
-    /// "Server locali" submenu: one entry per server (with its state) to remove
-    /// it, plus "Aggiungi server…".
-    private func serversItem() -> NSMenuItem {
-        let submenu = NSMenu()
-        for server in servers.servers {
-            let state = server.isUp == nil ? "…" : server.isUp! ? "attivo" : "non raggiungibile"
-            let entry = NSMenuItem(title: "\(server.name) — \(state)", action: nil, keyEquivalent: "")
-            entry.submenu = NSMenu()
-            entry.submenu?.addItem(item(server.url.absoluteString) {})
-            entry.submenu?.addItem(item("Rimuovi") { [weak self] in self?.servers.remove(server.name) })
-            submenu.addItem(entry)
-        }
-        if !servers.servers.isEmpty { submenu.addItem(.separator()) }
-        submenu.addItem(item("Aggiungi server…") { [weak self] in self?.addServer() })
-        let parent = NSMenuItem(title: "Server locali", action: nil, keyEquivalent: "")
-        parent.submenu = submenu
-        return parent
-    }
-
-    private func addServer() {
-        guard let values = askText(title: "Aggiungi un server locale", info: "NotchLite controlla ogni minuto se risponde.",
-                                   placeholders: ["Nome (es. Qwen)", "Indirizzo (es. http://192.168.1.10:8080)"]) else { return }
+    static func addServer() {
+        guard let servers, let values = askText(title: "Aggiungi un server locale", info: "NotchLite controlla ogni minuto se risponde.",
+                                                placeholders: ["Nome (es. Qwen)", "Indirizzo (es. http://192.168.1.10:8080)"]) else { return }
         var text = values[1]
         if !text.contains("://") { text = "http://" + text }
         guard let url = URL(string: text), url.host != nil, ["http", "https"].contains(url.scheme ?? "") else {
@@ -283,29 +224,14 @@ final class MenuController: NSObject, NSMenuDelegate {
         servers.add(name: values[0].isEmpty ? (url.host ?? "Server") : values[0], url: url)
     }
 
-    /// "Risposte rapide" submenu: each reply (click to remove) plus "Aggiungi risposta…".
-    private func repliesItem() -> NSMenuItem {
-        let submenu = NSMenu()
-        for reply in settings.quickReplies {
-            let entry = NSMenuItem(title: reply, action: nil, keyEquivalent: "")
-            entry.submenu = NSMenu()
-            entry.submenu?.addItem(item("Rimuovi") { [weak self] in self?.settings.quickReplies.removeAll { $0 == reply } })
-            submenu.addItem(entry)
-        }
-        if !settings.quickReplies.isEmpty { submenu.addItem(.separator()) }
-        submenu.addItem(item("Aggiungi risposta…") { [weak self] in
-            guard let self, let text = self.askText(title: "Aggiungi una risposta rapida",
-                                                    info: "Verrà scritta nel terminale dell'agente con Invio.",
-                                                    placeholders: ["Es. Fai il commit"])?.first, !text.isEmpty else { return }
-            self.settings.quickReplies.append(text)
-        })
-        let parent = NSMenuItem(title: "Risposte rapide", action: nil, keyEquivalent: "")
-        parent.submenu = submenu
-        return parent
+    static func addReply(to settings: Settings) {
+        guard let text = askText(title: "Aggiungi una risposta rapida", info: "Verrà scritta nel terminale dell'agente con Invio.",
+                                 placeholders: ["Es. Fai il commit"])?.first, !text.isEmpty else { return }
+        settings.quickReplies.append(text)
     }
 
     /// Small modal form: one text field per placeholder. Nil when cancelled.
-    private func askText(title: String, info: String, placeholders: [String]) -> [String]? {
+    private static func askText(title: String, info: String, placeholders: [String]) -> [String]? {
         // Fixed frames: a stack view here collapses the fields to zero width.
         let height = CGFloat(placeholders.count) * 32 - 8
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: height))
@@ -329,7 +255,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         return fields.map { $0.stringValue.trimmingCharacters(in: .whitespaces) }
     }
 
-    private func toggleHooks(installed: Bool) {
+    static func toggleHooks(installed: Bool) {
         let alert = NSAlert()
         do {
             if installed {
@@ -350,7 +276,9 @@ final class MenuController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
 
-    private static func toggleLaunchAtLogin() {
+    static var launchesAtLogin: Bool { SMAppService.mainApp.status == .enabled }
+
+    static func toggleLaunchAtLogin() {
         let service = SMAppService.mainApp
         do {
             if service.status == .enabled {
@@ -362,10 +290,4 @@ final class MenuController: NSObject, NSMenuDelegate {
             NSLog("NotchLite: launch at login failed: \(error.localizedDescription)")
         }
     }
-}
-
-private final class ClosureTarget: NSObject {
-    private let action: () -> Void
-    init(_ action: @escaping () -> Void) { self.action = action }
-    @objc func invoke() { action() }
 }

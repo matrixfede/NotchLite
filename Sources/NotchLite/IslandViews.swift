@@ -172,6 +172,8 @@ private struct ExpandedView: View {
             Group {
                 if model.tab == .agents {
                     AgentsTab(model: model, usage: usage)
+                } else if model.tab == .settings {
+                    SettingsTab(settings: model.settings, servers: model.ambient.servers)
                 } else {
                     nowTab
                 }
@@ -233,6 +235,9 @@ private struct ExpandedView: View {
             } else if battery.hasBattery {
                 BatteryLabel(battery: battery)
             }
+            ControlButton(symbol: "gearshape.fill", size: 11) { model.select(model.tab == .settings ? .now : .settings) }
+                .opacity(model.tab == .settings ? 1 : 0.6)
+                .help("Impostazioni")
         }
         .padding(.horizontal, 18)
         .frame(height: model.notchSize.height)
@@ -473,6 +478,119 @@ private struct Ago: View {
             Text(minutes < 1 ? "ora" : minutes < 60 ? "\(minutes) min fa" : "\(minutes / 60) h fa")
                 .lineLimit(1)
         }
+    }
+}
+
+// MARK: Settings tab
+
+private struct SettingsTab: View {
+    @ObservedObject var settings: Settings
+    @ObservedObject var servers: ServerMonitor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                ToggleChip(title: "Musica", isOn: settings.music) { settings.music.toggle() }
+                ToggleChip(title: "Batteria", isOn: settings.battery) { settings.battery.toggle() }
+                ToggleChip(title: "HUD volume", isOn: settings.volumeHUD) { settings.volumeHUD.toggle() }
+                ToggleChip(title: "Sessioni agenti", isOn: settings.agentSessions) { settings.agentSessions.toggle() }
+                ToggleChip(title: "Limiti agenti", isOn: settings.agentLimits) { settings.agentLimits.toggle() }
+                ToggleChip(title: "Permessi dal notch", isOn: settings.approveFromNotch) { settings.approveFromNotch.toggle() }
+                ToggleChip(title: "Suoni avvisi", isOn: settings.agentSounds) { settings.agentSounds.toggle() }
+                ToggleChip(title: "Calendario", isOn: settings.calendar) { settings.calendar.toggle() }
+                ToggleChip(title: "Mic e camera", isOn: settings.privacyDots) { settings.privacyDots.toggle() }
+                ToggleChip(title: "Avvio al login", isOn: SettingsActions.launchesAtLogin) {
+                    SettingsActions.toggleLaunchAtLogin()
+                    settings.objectWillChange.send()
+                }
+                let hooks = AgentHooks.isInstalled()
+                ToggleChip(title: "Hook agenti", isOn: hooks) {
+                    SettingsActions.toggleHooks(installed: hooks)
+                    settings.objectWillChange.send()
+                }
+                .help("Collega Claude Code e Codex al notch")
+            }
+
+            Section(title: "Server locali", add: SettingsActions.addServer) {
+                ForEach(servers.servers) { server in
+                    Chip(title: server.name, dot: server.isUp == nil ? .gray : server.isUp! ? .green : .red,
+                         help: server.url.absoluteString) { servers.remove(server.name) }
+                }
+            }
+            Section(title: "Risposte rapide", add: { SettingsActions.addReply(to: settings) }) {
+                ForEach(settings.quickReplies, id: \.self) { reply in
+                    Chip(title: reply, dot: nil, help: reply) { settings.quickReplies.removeAll { $0 == reply } }
+                }
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    private struct Section<Content: View>: View {
+        let title: String
+        let add: () -> Void
+        @ViewBuilder let content: Content
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(secondaryText)
+                    Spacer()
+                    ControlButton(symbol: "plus", size: 9, action: add).help("Aggiungi")
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), alignment: .leading, spacing: 6) {
+                    content
+                }
+            }
+        }
+    }
+}
+
+private struct ToggleChip: View {
+    let title: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isOn ? Color.green : secondaryText)
+                Text(title).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(0.08)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A removable entry: server (with its state dot) or quick reply.
+private struct Chip: View {
+    let title: String
+    let dot: Color?
+    let help: String
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
+            Text(title).lineLimit(1)
+            Spacer(minLength: 0)
+            Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(secondaryText)
+                .help("Rimuovi")
+        }
+        .font(.system(size: 11, weight: .medium))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(.white.opacity(0.08)))
+        .help(help)
     }
 }
 

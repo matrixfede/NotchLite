@@ -72,6 +72,8 @@ enum DebugPreviews {
         model.tab = .now
         model.debugSetExpanded(true)
         snap("6-expanded-idle")
+        model.tab = .settings
+        snap("7-expanded-settings")
     }
 
     /// `--render-live <dir>`: same views, real limits and stats from this Mac.
