@@ -29,7 +29,7 @@ del wallpaper, niente framework privati nell'app).
 - **Clic su una sessione → la sua scheda** in iTerm2 o Terminale (via tty).
 - **Server di modelli locali**: pallino verde/rosso, controllo ogni minuto.
   Si aggiungono e rimuovono dall'ingranaggio nel notch → *Server locali*.
-- **Rete** (icona del globo, stile pannello Network di Omarchy): Wi-Fi o Ethernet
+- **Rete** (scheda accanto a Ora e Agenti, stile pannello Network di Omarchy): Wi-Fi o Ethernet
   con banda, velocità e segnale, ping verso internet (1.1.1.1) e router, velocità
   di ricezione/invio, dati scaricati/caricati, IP e gateway. Lavora solo mentre
   la scheda è aperta.

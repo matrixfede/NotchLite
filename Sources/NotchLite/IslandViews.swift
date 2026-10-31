@@ -215,8 +215,11 @@ private struct ExpandedView: View {
     /// Tabs on the left of the notch, context controls on the right.
     private var header: some View {
         HStack(spacing: 6) {
-            TabButton(title: "Ora", selected: model.tab == .now) { model.select(.now) }
-            TabButton(title: "Agenti", selected: model.tab == .agents, badge: usage.isUrgent) { model.select(.agents) }
+            HStack(spacing: 2) {
+                TabButton(title: "Ora", selected: model.tab == .now) { model.select(.now) }
+                TabButton(title: "Agenti", selected: model.tab == .agents, badge: usage.isUrgent) { model.select(.agents) }
+                TabButton(title: "Rete", selected: model.tab == .network) { model.select(.network) }
+            }
             Spacer(minLength: model.notchSize.width + 12)
             if model.tab == .agents {
                 ControlButton(symbol: "arrow.clockwise", size: 11) { usage.refresh(force: true) }
@@ -237,9 +240,6 @@ private struct ExpandedView: View {
             } else if battery.hasBattery {
                 BatteryLabel(battery: battery)
             }
-            ControlButton(symbol: "network", size: 11) { model.select(model.tab == .network ? .now : .network) }
-                .opacity(model.tab == .network ? 1 : 0.6)
-                .help("Rete")
             ControlButton(symbol: "gearshape.fill", size: 11) { model.select(model.tab == .settings ? .now : .settings) }
                 .opacity(model.tab == .settings ? 1 : 0.6)
                 .help("Impostazioni")
@@ -262,7 +262,7 @@ private struct TabButton: View {
                 Text(title).font(.system(size: 11, weight: .semibold))
                 if badge { Circle().fill(.red).frame(width: 5, height: 5) }
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Capsule().fill(.white.opacity(selected ? 0.16 : 0)))
             .foregroundStyle(.white.opacity(selected ? 1 : 0.55))
