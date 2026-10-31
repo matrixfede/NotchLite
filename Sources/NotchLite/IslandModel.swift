@@ -50,7 +50,7 @@ final class IslandModel: ObservableObject {
     let usage: UsageService
     let ambient: Ambient
 
-    static let expandedWidth: CGFloat = 520
+    static let expandedWidth: CGFloat = 620
     static let maxSessionRows = 3
 
     private var hudWork: DispatchWorkItem?

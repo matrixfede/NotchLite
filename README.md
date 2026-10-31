@@ -35,8 +35,7 @@ del wallpaper, niente framework privati nell'app).
   la scheda è aperta. Riconosce le VPN. Pulsante **Test velocità** (`networkQuality`
   di macOS, circa 20 s). Sezione **Tailscale**: macchine online e offline con IP,
   clic per copiare l'IP, icona del terminale per aprire `ssh`.
-- **Sistema** (clic sulla batteria in alto a destra, stile pannello Power di
-  Omarchy): CPU, memoria, batteria e autonomia, consumo in watt, salute, cicli e
+- **Sistema** (scheda accanto a Rete, stile pannello Power di Omarchy): CPU, memoria, batteria e autonomia, consumo in watt, salute, cicli e
   stato termico. Si aggiorna ogni 2 s solo mentre è aperto.
 - **Timer e promemoria** nella scheda Ora: 5, 15 o 25 minuti, oppure un
   promemoria con testo. Conto alla rovescia sul notch chiuso, avviso e suono alla

@@ -238,6 +238,7 @@ private struct ExpandedView: View {
                 TabButton(title: "Ora", selected: model.tab == .now) { model.select(.now) }
                 TabButton(title: "Agenti", selected: model.tab == .agents, badge: usage.isUrgent) { model.select(.agents) }
                 TabButton(title: "Rete", selected: model.tab == .network) { model.select(.network) }
+                TabButton(title: "Sistema", selected: model.tab == .system) { model.select(.system) }
             }
             Spacer(minLength: model.notchSize.width + 12)
             if model.tab == .agents {
@@ -257,10 +258,7 @@ private struct ExpandedView: View {
                 .fixedSize()
                 .help("Avvia un agente")
             } else if battery.hasBattery {
-                Button { model.select(model.tab == .system ? .now : .system) } label: { BatteryLabel(battery: battery) }
-                    .buttonStyle(.plain)
-                    .opacity(model.tab == .system || model.tab == .now ? 1 : 0.8)
-                    .help("Sistema")
+                BatteryLabel(battery: battery)
             }
             ControlButton(symbol: "gearshape.fill", size: 11) { model.select(model.tab == .settings ? .now : .settings) }
                 .opacity(model.tab == .settings ? 1 : 0.6)
@@ -284,7 +282,7 @@ private struct TabButton: View {
                 Text(title).font(.system(size: 11, weight: .semibold))
                 if badge { Circle().fill(.red).frame(width: 5, height: 5) }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background(Capsule().fill(.white.opacity(selected ? 0.16 : 0)))
             .foregroundStyle(.white.opacity(selected ? 1 : 0.55))
@@ -763,7 +761,7 @@ private struct TailnetList: View {
     }
 }
 
-// MARK: "Sistema" panel (Omarchy-style power panel, opened from the battery)
+// MARK: "Sistema" tab (Omarchy-style power panel)
 
 private struct SystemTab: View {
     @ObservedObject var stats: SystemStats
