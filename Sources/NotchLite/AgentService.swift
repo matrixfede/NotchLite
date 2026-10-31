@@ -458,6 +458,8 @@ enum AgentHooks {
     [ -d "$dir" ] || exit 0
     input=$(head -c 65536); cat >/dev/null 2>&1
     head=$(printf '%s' "$input" | head -c 4096 | tr -d '\n\r')
+    # Top-level keys only: a nested key inside tool_input must not spoof them.
+    head=${head%%\"tool_input\"*}
     field() { printf '%s' "$head" | sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | tr -d '\\"\001-\037'; }
     pid=""; p=$PPID; i=0
     while [ -n "$p" ] && [ "$p" -gt 1 ] && [ $i -lt 6 ]; do
