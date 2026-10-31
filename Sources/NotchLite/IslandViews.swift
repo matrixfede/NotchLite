@@ -707,8 +707,8 @@ private struct AgentLimitsBlock: View {
                 }
                 Spacer()
                 if let fetched = info?.fetchedAt {
-                    Text(fetched, style: .relative)
-                        .font(.system(size: 10).monospacedDigit())
+                    Ago(date: fetched)
+                        .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.35))
                         .help("Ultimo aggiornamento")
                 }
