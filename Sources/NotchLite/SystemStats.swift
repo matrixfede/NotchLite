@@ -1,4 +1,5 @@
 import Foundation
+import CoreAudio
 import IOKit
 
 /// "Sistema" panel data (Omarchy's power panel): CPU, memory, battery details.
@@ -13,6 +14,8 @@ final class SystemStats: ObservableObject {
     @Published private(set) var cycles: Int?
     @Published private(set) var health: Int?
     @Published private(set) var thermal = ProcessInfo.ThermalState.nominal
+    @Published private(set) var outputs: [AudioOutput] = []
+    @Published private(set) var output = AudioObjectID(0)
 
     private var timer: Timer?
     private var lastTicks: (busy: UInt64, total: UInt64)?
@@ -40,6 +43,19 @@ final class SystemStats: ObservableObject {
         readMemory()
         readBattery()
         thermal = ProcessInfo.processInfo.thermalState
+        readAudio()
+    }
+
+    func selectOutput(_ id: AudioObjectID) {
+        AudioOutputs.select(id)
+        readAudio()
+    }
+
+    private func readAudio() {
+        let list = AudioOutputs.list()
+        if list != outputs { outputs = list }
+        let current = AudioOutputs.current
+        if current != output { output = current }
     }
 
     /// Busy share of all CPU ticks since the previous sample.

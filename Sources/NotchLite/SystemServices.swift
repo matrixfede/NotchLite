@@ -159,3 +159,55 @@ final class VolumeService {
         onChange?(value.0, value.1)
     }
 }
+
+// MARK: Audio output
+
+struct AudioOutput: Identifiable, Equatable {
+    let id: AudioObjectID
+    let name: String
+}
+
+/// Output devices and the default one (public CoreAudio API).
+enum AudioOutputs {
+    private static let system = AudioObjectID(kAudioObjectSystemObject)
+
+    static func list() -> [AudioOutput] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
+                                                     mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            var count: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &count) == noErr, count > 0 else { return nil }
+            var nameAddress = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
+                                                         mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var name: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            guard AudioObjectGetPropertyData(id, &nameAddress, 0, nil, &nameSize, &name) == noErr,
+                  let name = name?.takeRetainedValue() as String? else { return nil }
+            return AudioOutput(id: id, name: name)
+        }
+    }
+
+    static var current: AudioObjectID {
+        var address = defaultAddress
+        var id = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        AudioObjectGetPropertyData(system, &address, 0, nil, &size, &id)
+        return id
+    }
+
+    static func select(_ id: AudioObjectID) {
+        var address = defaultAddress
+        var device = id
+        AudioObjectSetPropertyData(system, &address, 0, nil, UInt32(MemoryLayout<AudioObjectID>.size), &device)
+    }
+
+    private static let defaultAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+}

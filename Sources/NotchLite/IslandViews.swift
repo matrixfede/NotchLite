@@ -779,6 +779,29 @@ private struct SystemTab: View {
                      "Salute", stats.health.map { "\($0)%" } ?? "--")
                 pair("Cicli", stats.cycles.map(String.init) ?? "--", "Temperatura", thermal)
             }
+            if !stats.outputs.isEmpty {
+                HStack(spacing: 10) {
+                    Text("Uscita audio").foregroundStyle(secondaryText)
+                    Menu {
+                        ForEach(stats.outputs) { device in
+                            Button { stats.selectOutput(device.id) } label: {
+                                if device.id == stats.output { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "speaker.wave.2.fill").font(.system(size: 10))
+                            Text(stats.outputs.first { $0.id == stats.output }?.name ?? "--").lineLimit(1)
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .bold))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    Spacer()
+                }
+                .font(.system(size: 11))
+            }
         }
         .foregroundStyle(.white)
         .onAppear { stats.start() }
