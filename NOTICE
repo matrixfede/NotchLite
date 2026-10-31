@@ -1,0 +1,3 @@
+The usage collectors (Sources/NotchLite/Collectors) are a Swift port of the
+agent collectors of Omarchy (https://github.com/basecamp/omarchy), also
+released under the MIT License, Copyright (c) David Heinemeier Hansson.
