@@ -131,10 +131,11 @@ final class AgentService: ObservableObject {
     func canReply(to session: AgentSession) -> Bool {
         // Only when the agent is really waiting on you, not after a finished turn.
         session.tty != nil && session.requestID == nil && session.state == .waiting
+            && AgentLauncher.canType(to: session.appBundleID)
     }
 
-    /// Esc stops the current turn in both Claude Code and Codex (iTerm only:
-    /// Terminal can't receive a bare keystroke through AppleScript).
+    /// Esc stops the current turn in both Claude Code and Codex (iTerm and
+    /// Ghostty: Terminal can't receive a bare keystroke through AppleScript).
     func canInterrupt(_ session: AgentSession) -> Bool {
         session.state == .working && session.tty != nil && AgentLauncher.canSendKeys(to: session.appBundleID)
     }

@@ -1,10 +1,11 @@
 import AppKit
 
-/// Terminal integration through AppleScript (iTerm2 when installed, Terminal
-/// otherwise): open a new agent session, bring an agent's own tab forward, or
-/// type a reply into it.
+/// Terminal integration through AppleScript (iTerm2, Ghostty, Terminal):
+/// open a new agent session, bring an agent's own tab forward, or type a
+/// reply into it.
 enum AgentLauncher {
     private static let iTerm = "com.googlecode.iterm2"
+    private static let ghostty = "com.mitchellh.ghostty"
     private static let terminal = "com.apple.Terminal"
 
     /// Opens a new terminal window running an agent (Omarchy's ">_" button).
@@ -12,7 +13,19 @@ enum AgentLauncher {
 
     /// Opens a new terminal window running `command` (callers pass safe text only).
     static func open(_ command: String) {
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iTerm) != nil {
+        // Ghostty when it's the one in use, else iTerm2, else Terminal.
+        let ghosttyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: ghostty).isEmpty
+        let hasITerm = NSWorkspace.shared.urlForApplication(withBundleIdentifier: iTerm) != nil
+        if ghosttyRunning || (!hasITerm && NSWorkspace.shared.urlForApplication(withBundleIdentifier: ghostty) != nil) {
+            run("""
+            tell application "Ghostty"
+                activate
+                set config to new surface configuration
+                set initial input of config to "\(command)" & linefeed
+                new window with configuration config
+            end tell
+            """)
+        } else if hasITerm {
             run("""
             tell application "iTerm"
                 activate
@@ -35,6 +48,7 @@ enum AgentLauncher {
     static func focus(tty: String?, appBundleID: String?) {
         if !inTab(tty: tty, appBundleID: appBundleID,
                   iTerm: "select aWindow\nselect aTab\nselect aSession\nactivate",
+                  ghostty: "focus aTerm\nactivate",
                   terminal: "set selected of aTab to true\nset index of aWindow to 1\nactivate") {
             activate(appBundleID)
         }
@@ -46,20 +60,24 @@ enum AgentLauncher {
             .replacingOccurrences(of: "\"", with: "\\\"") + "\""
         _ = inTab(tty: tty, appBundleID: appBundleID,
                   iTerm: "tell aSession to write text \(quoted)",
+                  ghostty: "input text \(quoted) to aTerm\nsend key \"enter\" to aTerm",
                   terminal: "do script \(quoted) in aTab")
     }
 
-    static func canSendKeys(to appBundleID: String?) -> Bool { appBundleID == iTerm }
+    static func canType(to appBundleID: String?) -> Bool { [iTerm, ghostty, terminal].contains(appBundleID) }
+    static func canSendKeys(to appBundleID: String?) -> Bool { appBundleID == iTerm || appBundleID == ghostty }
 
-    /// Presses Esc in the agent's iTerm session.
+    /// Presses Esc in the agent's iTerm or Ghostty tab.
     static func sendEscape(tty: String?, appBundleID: String?) {
         _ = inTab(tty: tty, appBundleID: appBundleID,
-                  iTerm: "tell aSession to write text (character id 27) newline no", terminal: "")
+                  iTerm: "tell aSession to write text (character id 27) newline no",
+                  ghostty: "send key \"escape\" to aTerm", terminal: "")
     }
 
-    /// Runs `iTerm` / `terminal` AppleScript on the tab whose tty matches.
+    /// Runs the matching app's AppleScript on the tab whose tty matches.
     /// Returns false when the terminal app or tty isn't one we can address.
-    private static func inTab(tty: String?, appBundleID: String?, iTerm iTermAction: String, terminal terminalAction: String) -> Bool {
+    private static func inTab(tty: String?, appBundleID: String?, iTerm iTermAction: String,
+                              ghostty ghosttyAction: String, terminal terminalAction: String) -> Bool {
         guard let tty, tty.range(of: #"^/dev/ttys?[0-9]+$"#, options: .regularExpression) != nil else { return false }
         switch appBundleID {
         case iTerm:
@@ -74,6 +92,17 @@ enum AgentLauncher {
                             end if
                         end repeat
                     end repeat
+                end repeat
+            end tell
+            """)
+        case ghostty:
+            run("""
+            tell application "Ghostty"
+                repeat with aTerm in terminals
+                    if tty of aTerm is "\(tty)" then
+                        \(ghosttyAction)
+                        return
+                    end if
                 end repeat
             end tell
             """)

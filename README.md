@@ -26,7 +26,7 @@ del wallpaper, niente framework privati nell'app).
 - **Riepilogo a fine task**: l'ultima risposta dell'agente nella riga della sessione.
 - **Previsione dei limiti**: "finisce gio 14:00" in arancione se al ritmo
   attuale il limite si esaurisce prima del reset.
-- **Clic su una sessione → la sua scheda** in iTerm2 o Terminale (via tty).
+- **Clic su una sessione → la sua scheda** in iTerm2, Ghostty o Terminale (via tty). Negli altri terminali porta in primo piano l'app.
 - **Server di modelli locali**: pallino verde/rosso, controllo ogni minuto.
   Si aggiungono e rimuovono dall'ingranaggio nel notch → *Server locali*.
 - **Rete** (scheda accanto a Ora e Agenti, stile pannello Network di Omarchy): Wi-Fi o Ethernet
@@ -44,7 +44,7 @@ del wallpaper, niente framework privati nell'app).
 - **Prossimo evento del calendario** (entro 12 ore) nella scheda Ora.
 - **Risposte rapide** (menu *Rispondi* sulla sessione) scritte nel terminale
   dell'agente; l'elenco si modifica dall'ingranaggio nel notch → *Risposte rapide*.
-- **Interrompi**: preme Esc nella scheda iTerm dell'agente al lavoro.
+- **Interrompi**: preme Esc nella scheda iTerm2 o Ghostty dell'agente al lavoro.
 - **Ripiano file**: trascina file sul notch, poi trascinali fuori, clic per
   aprirli, clic destro per rimuoverli.
 - **Statistiche per agente** nella scheda Agenti (token oggi/settimana, prompt, modello).
@@ -120,7 +120,7 @@ I collector sono un port in Swift di quelli di
 | `AgentService.swift` | sessioni live dagli eventi hook, installer degli hook |
 | `UsageService.swift` | aggiornamento dei collector e statistiche Claude/Codex |
 | `Collectors/` | un collector per provider, sul protocollo di `CollectorKit.swift` |
-| `AgentLauncher.swift` | nuova sessione agente in iTerm2/Terminale |
+| `AgentLauncher.swift` | nuova sessione agente e scrittura nelle schede di iTerm2, Ghostty e Terminale |
 
 A riposo: circa 0% CPU, circa 65 MB (più circa 22 MB del processo bridge musicale).
 
