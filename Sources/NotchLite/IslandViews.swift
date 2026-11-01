@@ -87,6 +87,8 @@ private struct CompactView: View {
         }
         .frame(height: model.notchSize.height)
         .overlay(alignment: .trailing) { PrivacyDots(privacy: model.ambient.privacy).padding(.trailing, 4) }
+        .contentShape(Rectangle())
+        .onTapGesture { model.openNow() }
         .animation(spring, value: model.compact)
     }
 

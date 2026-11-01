@@ -52,6 +52,7 @@ final class IslandModel: ObservableObject {
 
     static let expandedWidth: CGFloat = 620
     static let maxSessionRows = 3
+    static let openDelay: TimeInterval = 0.5
 
     private var hudWork: DispatchWorkItem?
     private var hoverWork: DispatchWorkItem?
@@ -146,12 +147,21 @@ final class IslandModel: ObservableObject {
         if tab == .agents { usage.refresh(force: false, maxLimitsAge: 120) }
     }
 
+    /// Click on the closed island: open without waiting.
+    func openNow() {
+        guard isHovering, !isExpanded else { return }
+        hoverWork?.cancel()
+        isExpanded = true
+        if tab == .agents { usage.refresh(force: false, maxLimitsAge: 120) }
+    }
+
     func setHovering(_ hovering: Bool) {
         guard hovering != isHovering else { return }
         isHovering = hovering
         hoverWork?.cancel()
-        // Small delays avoid accidental opens and flicker at the edges.
-        let delay: TimeInterval = hovering ? 0.12 : 0.35
+        // Opening waits for the pointer to rest on the notch, so passing over
+        // it on the way to the menu bar doesn't open it; a click opens at once.
+        let delay: TimeInterval = hovering ? Self.openDelay : 0.35
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.isHovering == hovering, self.isExpanded != hovering else { return }
