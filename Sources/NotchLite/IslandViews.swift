@@ -549,6 +549,12 @@ private struct SettingsTab: View {
                     Chip(title: reply, dot: nil, help: reply) { settings.quickReplies.removeAll { $0 == reply } }
                 }
             }
+            Button { Guide.show() } label: {
+                Label("Guida introduttiva", systemImage: "questionmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryText)
+            }
+            .buttonStyle(.plain)
         }
         .foregroundStyle(.white)
     }

@@ -110,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu = MenuController(usage: usage)
 
         applySettings()
+        Guide.showIfNeeded()
         settingsObserver = settings.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.applySettings() } }
         }

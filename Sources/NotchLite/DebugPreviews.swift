@@ -90,6 +90,12 @@ enum DebugPreviews {
         model.show(.timer(label: "Togli la pasta"))
         snap("12-compact-timer-done")
         model.ambient.timer.cancel()
+        let guide = ImageRenderer(content: GuideView(hide: Box(false)) {})
+        guide.scale = 2
+        if let tiff = guide.nsImage?.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("13-guide.png"))
+        }
     }
 
     /// `--render-live <dir>`: same views, real limits and stats from this Mac.
