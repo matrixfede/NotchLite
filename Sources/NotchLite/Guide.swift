@@ -97,6 +97,7 @@ struct GuideView: View {
             VStack(alignment: .leading, spacing: 8) {
                 tip("cursorarrow.rays", "Fermati sul notch per mezzo secondo, o fai clic, per aprirlo.")
                 tip("gearshape.fill", "Impostazioni dall'ingranaggio: attiva Hook agenti per vedere Claude Code e Codex.")
+                tip("apple.terminal", "Terminali compatibili: iTerm2, Ghostty e Terminale. Negli altri il clic apre solo l'app.")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

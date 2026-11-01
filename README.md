@@ -87,6 +87,23 @@ minuti quando apri la scheda Agenti. Le statistiche leggono in modo incrementale
 Lo script hook accoda una riga JSON a
 `~/Library/Application Support/NotchLite/events.jsonl` (circa 30 ms per evento).
 
+## Terminali compatibili
+
+Le sessioni arrivano dagli hook di Claude Code e Codex, quindi compaiono da
+qualsiasi terminale. Le azioni sulla scheda dell'agente usano AppleScript:
+
+| Funzione | iTerm2 | Ghostty | Terminale | Altri (Warp, Kitty, WezTerm, VS Code…) |
+|---|---|---|---|---|
+| Righe delle sessioni, Consenti / Nega, limiti | ✓ | ✓ | ✓ | ✓ |
+| Clic sulla riga | scheda giusta | scheda giusta | scheda giusta | solo l'app |
+| Risposte rapide | ✓ | ✓ | ✓ | – |
+| Interrompi (Esc) | ✓ | ✓ | – | – |
+| Nuova sessione Claude / Codex | ✓ | ✓ (se aperto) | ✓ (se manca iTerm2) | – |
+
+Ghostty serve dalla versione 1.4 (supporto AppleScript). Con tmux il clic porta
+in primo piano il terminale ma non il riquadro. La prima volta macOS chiede il
+permesso di controllare il terminale.
+
 ## Agenti supportati
 
 Gli agenti di Omarchy con limiti o credito. Nella scheda compaiono solo quelli
