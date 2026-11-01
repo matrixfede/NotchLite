@@ -145,4 +145,5 @@ A riposo: circa 0% CPU, circa 65 MB (più circa 22 MB del processo bridge musica
 
 ## Licenza
 
-MIT © matrixfede, vedi [LICENSE](LICENSE).
+GPL-3.0-or-later © matrixfede, vedi [LICENSE](LICENSE).
+Il codice derivato da Omarchy resta sotto licenza MIT, vedi [NOTICE](NOTICE).
