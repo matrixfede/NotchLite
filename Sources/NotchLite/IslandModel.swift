@@ -152,6 +152,7 @@ final class IslandModel: ObservableObject {
         guard isHovering, !isExpanded else { return }
         hoverWork?.cancel()
         isExpanded = true
+        ambient.servers.checkIfStale()
         if tab == .agents { usage.refresh(force: false, maxLimitsAge: 120) }
     }
 
@@ -166,6 +167,7 @@ final class IslandModel: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, self.isHovering == hovering, self.isExpanded != hovering else { return }
                 self.isExpanded = hovering
+                if hovering { self.ambient.servers.checkIfStale() }
                 if hovering, self.tab == .agents { self.usage.refresh(force: false, maxLimitsAge: 120) }
             }
         }

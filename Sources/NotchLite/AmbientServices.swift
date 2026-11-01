@@ -2,6 +2,7 @@ import AppKit
 import CoreAudio
 import CoreMediaIO
 import EventKit
+import Network
 
 /// The small ambient services, owned together.
 @MainActor
@@ -61,14 +62,17 @@ struct ServerStatus: Identifiable, Equatable {
     var isUp: Bool?
 }
 
-/// Pings the local model servers once a minute; any HTTP answer counts as up.
-/// The list is edited from the menu bar and kept in the app's preferences.
+/// Pings the local model servers once a minute, right after a network change
+/// (Tailscale on/off, another Wi-Fi) and when the notch opens; any HTTP answer
+/// counts as up. The list is edited from the notch settings.
 @MainActor
 final class ServerMonitor: ObservableObject {
     @Published private(set) var servers: [ServerStatus] = []
 
     private static let key = "servers"
     private var timer: Timer?
+    private var path: NWPathMonitor?
+    private var checkedAt = Date.distantPast
 
     init() {
         importLegacyFile()
@@ -83,7 +87,18 @@ final class ServerMonitor: ObservableObject {
         timer.tolerance = 15
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        let path = NWPathMonitor()
+        path.pathUpdateHandler = { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.check() } }
+        }
+        path.start(queue: .global(qos: .utility))
+        self.path = path
         check()
+    }
+
+    /// The notch opened: refresh unless the last answer is fresh.
+    func checkIfStale() {
+        if Date().timeIntervalSince(checkedAt) > 15 { check() }
     }
 
     func add(name: String, url: URL) {
@@ -105,8 +120,10 @@ final class ServerMonitor: ObservableObject {
     private func check() {
         let list = servers
         guard !list.isEmpty else { return }
+        checkedAt = Date()
         DispatchQueue.global(qos: .utility).async {
-            let results = list.map { ServerStatus(name: $0.name, url: $0.url, isUp: Kit.request($0.url, timeout: 3).status > 0) }
+            // 5 s: the first packet through a Tailscale relay can take a few seconds.
+            let results = list.map { ServerStatus(name: $0.name, url: $0.url, isUp: Kit.request($0.url, timeout: 5).status > 0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     // Ignore an answer for a list that was edited meanwhile.
