@@ -5,6 +5,10 @@ import SwiftUI
 /// `NotchLite --render-previews <dir>` (debug builds only): renders island states to PNG.
 @MainActor
 enum DebugPreviews {
+    /// NOTCHLITE_PREVIEW_DARK=1 renders on the near-black used by promo images.
+    private static let background = ProcessInfo.processInfo.environment["NOTCHLITE_PREVIEW_DARK"] == nil
+        ? Color(white: 0.85) : Color(red: 8 / 255, green: 8 / 255, blue: 12 / 255)
+
     static func render(to directory: String) {
         let settings = Settings()
         let media = MediaService(), agents = AgentService(), battery = BatteryService(), usage = UsageService()
@@ -18,7 +22,7 @@ enum DebugPreviews {
 
         func snap(_ name: String) {
             let view = IslandRootView(model: model)
-                .frame(width: 680, height: 360).background(Color(white: 0.85))
+                .frame(width: 680, height: 360).background(background)
             let renderer = ImageRenderer(content: view)
             renderer.scale = 2
             if let image = renderer.nsImage, let tiff = image.tiffRepresentation,

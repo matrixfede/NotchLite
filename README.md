@@ -1,5 +1,7 @@
 # NotchLite
 
+![NotchLite](docs/notchlite.png)
+
 Dynamic Island leggera per il notch del MacBook. Ispirata a Notchly, ridotta
 alle funzioni utili e senza componenti fragili (niente helper root, niente hack
 del wallpaper, niente framework privati nell'app).
