@@ -685,7 +685,9 @@ private struct NetworkTab: View {
                     network.speedTest()
                 }
                 .disabled(network.isTesting)
-                if let speed = network.speed {
+                if network.speedFailed {
+                    Text("Test non riuscito").font(.system(size: 11)).foregroundStyle(.red.opacity(0.8))
+                } else if let speed = network.speed {
                     Text("↓ \(mbit(speed.down))  ↑ \(mbit(speed.up))  ·  \(Int(speed.latency)) ms")
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(secondaryText)

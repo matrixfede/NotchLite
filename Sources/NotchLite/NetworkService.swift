@@ -47,6 +47,9 @@ final class NetworkService: ObservableObject {
     private var timer: Timer?
     private var ticks = 0
     private var pinging = false
+    private var sampledAt = Date()
+    /// The last speed test failed (offline, or networkQuality unavailable).
+    @Published private(set) var speedFailed = false
 
     func start() {
         guard timer == nil else { return }
@@ -63,6 +66,8 @@ final class NetworkService: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        received = 0 // the next open must not divide by the closed time
+        sent = 0
         downRate = nil
         upRate = nil
     }
@@ -78,7 +83,13 @@ final class NetworkService: ObservableObject {
     private func readLink() {
         let global = value("State:/Network/Global/IPv4")
         let name = global?["PrimaryInterface"] as? String
-        if name != interface { interface = name; downRate = nil; upRate = nil }
+        if name != interface { // counters of another interface: start over
+            interface = name
+            received = 0
+            sent = 0
+            downRate = nil
+            upRate = nil
+        }
         let router = global?["Router"] as? String
         if router != gateway { gateway = router }
         let address = name.flatMap { value("State:/Network/Interface/\($0)/IPv4")?["Addresses"] as? [String] }?.first
@@ -128,13 +139,17 @@ final class NetworkService: ObservableObject {
             }
         }
         guard let rx, let tx else { return }
-        // A rate needs a previous sample on the same interface.
-        if received > 0, rx >= received, tx >= sent {
-            downRate = Double(rx - received)
-            upRate = Double(tx - sent)
+        // A rate needs a previous sample on the same interface; timer ticks
+        // drift, so divide by the real interval.
+        let now = Date()
+        let seconds = now.timeIntervalSince(sampledAt)
+        if received > 0, rx >= received, tx >= sent, seconds > 0.2 {
+            downRate = Double(rx - received) / seconds
+            upRate = Double(tx - sent) / seconds
         }
         received = rx
         sent = tx
+        sampledAt = now
     }
 
     private func ping() {
@@ -193,6 +208,7 @@ final class NetworkService: ObservableObject {
     func speedTest() {
         guard !isTesting else { return }
         isTesting = true
+        speedFailed = false
         DispatchQueue.global(qos: .utility).async {
             let data = Self.run("/usr/bin/networkQuality", ["-c"])
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -204,6 +220,7 @@ final class NetworkService: ObservableObject {
                 MainActor.assumeIsolated {
                     self.isTesting = false
                     self.speed = result
+                    self.speedFailed = result == nil
                 }
             }
         }
