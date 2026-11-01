@@ -161,7 +161,7 @@ final class IslandModel: ObservableObject {
         hoverWork?.cancel()
         // Opening waits for the pointer to rest on the notch, so passing over
         // it on the way to the menu bar doesn't open it; a click opens at once.
-        let delay: TimeInterval = hovering ? Self.openDelay : 0.35
+        let delay: TimeInterval = hovering ? Self.openDelay : 0.1
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.isHovering == hovering, self.isExpanded != hovering else { return }

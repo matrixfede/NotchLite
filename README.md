@@ -50,7 +50,7 @@ del wallpaper, niente framework privati nell'app).
 - **Statistiche per agente** nella scheda Agenti (token oggi/settimana, prompt, modello).
 - Si nasconde da solo nelle app a schermo intero. Avvio al login dall'ingranaggio.
 
-Fermati col mouse sul notch per mezzo secondo per espanderla, oppure fai clic: passarci sopra di fretta non la apre. Impostazioni dall'ingranaggio nel notch; l'icona nella menu bar serve solo a chiudere l'app.
+Fermati col mouse sul notch per mezzo secondo per espanderla, oppure fai clic: passarci sopra di fretta non la apre. Si chiude appena esci. Impostazioni dall'ingranaggio nel notch; l'icona nella menu bar serve solo a chiudere l'app.
 
 ## Build
 
