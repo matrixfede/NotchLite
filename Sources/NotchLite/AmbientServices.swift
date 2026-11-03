@@ -162,11 +162,43 @@ final class PrivacyMonitor: ObservableObject {
     private var running = false
     private var inputDevice = AudioObjectID(kAudioObjectUnknown)
     private var cameras: [CMIOObjectID] = []
-    private lazy var audioListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-        MainActor.assumeIsolated { self?.rebind() }
+
+    // Listeners use the function-pointer API, not the block one: Swift imports
+    // the block typedefs as Swift closures and re-wraps them in a fresh block on
+    // every call, so RemovePropertyListenerBlock never matched what Add had
+    // registered. Listeners piled up, each event fired all of them, and every
+    // one re-added more, until the main thread spun forever. Proc + clientData
+    // compare by value, so removal is exact.
+    private final class Token: @unchecked Sendable {
+        weak var monitor: PrivacyMonitor?
     }
-    private lazy var cameraListener: CMIOObjectPropertyListenerBlock = { [weak self] _, _ in
-        MainActor.assumeIsolated { self?.rebind() }
+    private let token = Token()
+    private var clientData: UnsafeMutableRawPointer { Unmanaged.passUnretained(token).toOpaque() }
+
+    /// Default input or camera list changed → rebind; a device started/stopped → re-read flags.
+    private static func deliver(_ data: UnsafeMutableRawPointer?, rebind: Bool) {
+        guard let data else { return }
+        let token = Unmanaged<Token>.fromOpaque(data).takeUnretainedValue()
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let monitor = token.monitor else { return }
+                if rebind { monitor.rebind() } else { monitor.refresh() }
+            }
+        }
+    }
+
+    private static let audioProc: AudioObjectPropertyListenerProc = { _, count, addresses, data in
+        let rebind = (0..<Int(count)).contains { addresses[$0].mSelector == kAudioHardwarePropertyDefaultInputDevice }
+        PrivacyMonitor.deliver(data, rebind: rebind)
+        return noErr
+    }
+
+    private static let cameraProc: CMIOObjectPropertyListenerProc = { _, count, addresses, data in
+        let rebind = addresses.map { list in
+            (0..<Int(count)).contains { list[$0].mSelector == CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices) }
+        } ?? true
+        PrivacyMonitor.deliver(data, rebind: rebind)
+        return noErr
     }
 
     private var defaultInput = AudioObjectPropertyAddress(
@@ -187,16 +219,17 @@ final class PrivacyMonitor: ObservableObject {
     func start() {
         guard !running else { return }
         running = true
-        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultInput, .main, audioListener)
-        CMIOObjectAddPropertyListenerBlock(CMIOObjectID(kCMIOObjectSystemObject), &cameraList, .main, cameraListener)
+        token.monitor = self
+        AudioObjectAddPropertyListener(AudioObjectID(kAudioObjectSystemObject), &defaultInput, Self.audioProc, clientData)
+        CMIOObjectAddPropertyListener(CMIOObjectID(kCMIOObjectSystemObject), &cameraList, Self.cameraProc, clientData)
         rebind()
     }
 
     func stop() {
         guard running else { return }
         running = false
-        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultInput, .main, audioListener)
-        CMIOObjectRemovePropertyListenerBlock(CMIOObjectID(kCMIOObjectSystemObject), &cameraList, .main, cameraListener)
+        AudioObjectRemovePropertyListener(AudioObjectID(kAudioObjectSystemObject), &defaultInput, Self.audioProc, clientData)
+        CMIOObjectRemovePropertyListener(CMIOObjectID(kCMIOObjectSystemObject), &cameraList, Self.cameraProc, clientData)
         unbind()
         microphone = false
         camera = false
@@ -209,12 +242,18 @@ final class PrivacyMonitor: ObservableObject {
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultInput, 0, nil, &size, &inputDevice)
         if inputDevice != kAudioObjectUnknown {
-            AudioObjectAddPropertyListenerBlock(inputDevice, &audioRunning, .main, audioListener)
+            AudioObjectAddPropertyListener(inputDevice, &audioRunning, Self.audioProc, clientData)
         }
         cameras = cameraDevices()
         for device in cameras {
-            CMIOObjectAddPropertyListenerBlock(device, &cameraRunning, .main, cameraListener)
+            CMIOObjectAddPropertyListener(device, &cameraRunning, Self.cameraProc, clientData)
         }
+        refresh()
+    }
+
+    /// Re-reads both flags without touching the listeners.
+    private func refresh() {
+        guard running else { return }
         let mic = inputDevice != kAudioObjectUnknown && isRunning(audio: inputDevice)
         let cam = cameras.contains { isRunning(camera: $0) }
         if mic != microphone { microphone = mic }
@@ -223,10 +262,10 @@ final class PrivacyMonitor: ObservableObject {
 
     private func unbind() {
         if inputDevice != kAudioObjectUnknown {
-            AudioObjectRemovePropertyListenerBlock(inputDevice, &audioRunning, .main, audioListener)
+            AudioObjectRemovePropertyListener(inputDevice, &audioRunning, Self.audioProc, clientData)
         }
         for device in cameras {
-            CMIOObjectRemovePropertyListenerBlock(device, &cameraRunning, .main, cameraListener)
+            CMIOObjectRemovePropertyListener(device, &cameraRunning, Self.cameraProc, clientData)
         }
         inputDevice = AudioObjectID(kAudioObjectUnknown)
         cameras = []
