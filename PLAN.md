@@ -12,7 +12,7 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 | # | Task | Status | Depends on | Verification | Notes |
 |---|------|--------|------------|--------------|-------|
 | 1 | Fix usage refresh and presentation, compiler warnings | ✅ done | — | sh Tests/run.sh; swift build; usage report | Build, Swift regression checks, live report and rendered preview passed; keel VERIFY: PASS |
-| 2 | Commit and push verified changes | 🔄 in progress | 1 | git diff --check; remote SHA | |
+| 2 | Commit and push verified changes | ✅ done | 1 | git diff --check; remote SHA | Fix commit 615d8ca verified on origin/main |
 
 ## Contracts
 - Task 1 — OUT: `Sources/NotchLite/UsageService.swift` — shape: queued manual refresh, shorter refresh intervals, failed attempt retry.
