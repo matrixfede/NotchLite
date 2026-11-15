@@ -8,6 +8,9 @@ enum NotchLiteMain {
     static func main() {
         signal(SIGPIPE, SIG_IGN)
         let arguments = CommandLine.arguments
+        if arguments.count == 3, arguments[1] == "--receive-remote-event" {
+            exit(RemoteAgentEvent.receive(source: arguments[2]) ? 0 : 1)
+        }
         #if DEBUG
         if let index = arguments.firstIndex(of: "--render-live"), index + 1 < arguments.count {
             DebugPreviews.renderLive(to: arguments[index + 1])

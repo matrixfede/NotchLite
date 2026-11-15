@@ -50,6 +50,8 @@ struct AgentSession: Identifiable, Equatable {
     var tty: String? // terminal the agent runs in, to focus its tab
     var summary: String? // last assistant message, when finished
 
+    var remoteHost: String? = nil
+
     var isAlerting: Bool { (alertUntil ?? .distantPast) > Date() }
 }
 
@@ -123,7 +125,7 @@ final class AgentService: ObservableObject {
     }
 
     func activate(_ session: AgentSession) {
-        AgentLauncher.focus(tty: session.tty, appBundleID: session.appBundleID)
+        if session.remoteHost == nil { AgentLauncher.focus(tty: session.tty, appBundleID: session.appBundleID) }
         if session.state == .completed || session.state == .failed { dismiss(session) }
     }
 
@@ -239,13 +241,20 @@ final class AgentService: ObservableObject {
 
     // MARK: Events
 
-    private func apply(_ event: [String: Any]) {
+    private func apply(_ raw: [String: Any]) {
+        var event = raw
+        if let source = raw["remote"] as? String {
+            guard let data = try? JSONSerialization.data(withJSONObject: raw),
+                  let normalized = RemoteAgentEvent.normalize(data, source: source) else { return }
+            event = normalized
+        }
         guard let kind = event["kind"] as? String else { return }
         if let timestamp = event["ts"] as? Double, Date().timeIntervalSince1970 - timestamp > 60 { return }
 
         let agent = AgentName(rawValue: event["agent"] as? String ?? "") ?? .claude
         let session = nonEmpty(event["session"]) ?? "default"
-        let id = "\(agent.rawValue):\(session)"
+        let remote = event["remote"] as? String
+        let id = remote.map { "remote:\($0):\(agent.rawValue):\(session)" } ?? "\(agent.rawValue):\(session)"
         let now = Date()
 
         if kind == "end" {
@@ -275,7 +284,9 @@ final class AgentService: ObservableObject {
         if state == .working, ![.working, .approval].contains(entry.state) || byID[id] == nil { entry.startedAt = now }
         entry.state = state
         entry.updatedAt = now
-        if let cwd = nonEmpty(event["cwd"]) { entry.project = URL(fileURLWithPath: cwd).lastPathComponent }
+        entry.project = nonEmpty(event["cwd"]).map { URL(fileURLWithPath: $0).lastPathComponent } ?? agent.displayName
+        entry.remoteHost = remote
+        if let remote { entry.project += " · " + remote }
         entry.tool = state == .approval ? nonEmpty(event["tool"]) : nil
         entry.appBundleID = nonEmpty(event["app"]) ?? entry.appBundleID
         if let pid = Int32(nonEmpty(event["pid"]) ?? ""), pid > 1 { entry.pid = pid }

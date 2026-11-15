@@ -6,6 +6,7 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 
 ## Active requirements
 - R1: Fix audited refresh, visibility, statistics and compiler warnings (user, 2026-11-15).
+- R3: Implement remote CLI monitoring; investigate Omarchy (user, 2026-11-15).
 - R2: Commit and push to GitHub (user, 2026-11-15).
 
 ## Plan
@@ -13,6 +14,8 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 |---|------|--------|------------|--------------|-------|
 | 1 | Fix usage refresh and presentation, compiler warnings | ✅ done | — | sh Tests/run.sh; swift build; usage report | Build, Swift regression checks, live report and rendered preview passed; keel VERIFY: PASS |
 | 2 | Commit and push verified changes | ✅ done | 1 | git diff --check; remote SHA | Fix commit 615d8ca verified on origin/main |
+
+| 3 | Remote SSH event receiver, sender and installation guide | ✅ done | 1 | Swift and Python regression tests; build; isolated end-to-end event test | Tests, release build, installed receiver integration and keel verification passed |
 
 ## Contracts
 - Task 1 — OUT: `Sources/NotchLite/UsageService.swift` — shape: queued manual refresh, shorter refresh intervals, failed attempt retry.
@@ -22,3 +25,7 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 - Existing explicit authorization covers implementation and publication.
 - ASSUMED: update source and GitHub; do not replace running installed app.
 - No keel hooks installed in this repository; do not introduce hooks as part of bug fixes.
+
+- Remote design: SSH-authenticated one-event receiver with strict input validation; no remote execution actions in UI. Remote PC enrollment awaits host details.
+
+- Deployment: updated Mac app with receiver support. Real remote enrollment and SSH end-to-end verification await the user's PC aliases; no SSH service or keys changed.

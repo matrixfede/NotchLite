@@ -147,3 +147,7 @@ A riposo: circa 0% CPU, circa 65 MB (più circa 22 MB del processo bridge musica
 
 GPL-3.0-or-later © matrixfede, vedi [LICENSE](LICENSE).
 Il codice derivato da Omarchy resta sotto licenza MIT, vedi [NOTICE](NOTICE).
+
+### Remote CLI sessions
+
+Monitor Claude Code and Codex running on other Linux/macOS PCs via authenticated SSH hooks. See [setup and limitations](docs/remote-agents.md). Remote sessions are read-only and labeled by machine; token totals are not synchronized.

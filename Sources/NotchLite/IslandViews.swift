@@ -487,7 +487,7 @@ private struct IdleCard: View {
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { AgentLauncher.focus(tty: last.tty, appBundleID: last.appBundleID) }
+                .onTapGesture { if last.remoteHost == nil { AgentLauncher.focus(tty: last.tty, appBundleID: last.appBundleID) } }
                 .help("Vai al terminale")
             }
         }
