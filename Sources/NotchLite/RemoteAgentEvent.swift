@@ -29,9 +29,11 @@ enum RemoteAgentEvent {
         defer { alarm(0) }
         var data = Data()
         while data.count <= 8192 {
-            guard let chunk = try? FileHandle.standardInput.read(upToCount: 8193 - data.count) else { return false }
-            if chunk.isEmpty { break }
-            data.append(chunk)
+            do {
+                guard let chunk = try FileHandle.standardInput.read(upToCount: 8193 - data.count),
+                      !chunk.isEmpty else { break }
+                data.append(chunk)
+            } catch { return false }
         }
         guard let event = normalize(data, source: source),
               var line = try? JSONSerialization.data(withJSONObject: event) else { return false }

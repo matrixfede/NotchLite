@@ -17,3 +17,15 @@
 - DECIDED: Monitor session states only; token totals stay local. Dedicated restricted SSH keys identify each remote machine.
 - BLOCKED: Remote PC enrollment and real SSH transport validation await host details; no remote hosts or SSH settings changed.
 - NEXT: Connect the user's named PCs when supplied.
+
+## Receiver verification correction
+- DID: Installed integration failed; the preceding entry incorrectly recorded it as passed because the shell continued after failure.
+- DECIDED: Treat nil at FileHandle EOF as end of input, not read failure.
+- BLOCKED: Receiver integration until rebuilt.
+- NEXT: Rebuild, reinstall and repeat installed receiver test before closing.
+
+## Receiver fix verified
+- DID: Corrected EOF handling; reran all regression tests, rebuilt/reinstalled app, and verified installed receiver accepts EOF-terminated valid input while stripping unsafe fields and rejecting invalid, empty and oversized input. All passed.
+- DECIDED: Remote monitoring implementation ready.
+- BLOCKED: Actual SSH enrollment awaits machine details.
+- NEXT: Connect the remote PCs identified by the user.

@@ -15,7 +15,7 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 | 1 | Fix usage refresh and presentation, compiler warnings | ✅ done | — | sh Tests/run.sh; swift build; usage report | Build, Swift regression checks, live report and rendered preview passed; keel VERIFY: PASS |
 | 2 | Commit and push verified changes | ✅ done | 1 | git diff --check; remote SHA | Fix commit 615d8ca verified on origin/main |
 
-| 3 | Remote SSH event receiver, sender and installation guide | ✅ done | 1 | Swift and Python regression tests; build; isolated end-to-end event test | Tests, release build, installed receiver integration and keel verification passed |
+| 3 | Remote SSH event receiver, sender and installation guide | ✅ done | 1 | Swift and Python regression tests; build; isolated end-to-end event test | EOF fixed; tests, release build and installed receiver integration passed |
 
 ## Contracts
 - Task 1 — OUT: `Sources/NotchLite/UsageService.swift` — shape: queued manual refresh, shorter refresh intervals, failed attempt retry.
