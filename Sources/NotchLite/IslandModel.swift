@@ -80,18 +80,18 @@ final class IslandModel: ObservableObject {
 
     var showsMusic: Bool { settings.music && media.track != nil }
     var isMusicPlaying: Bool { showsMusic && media.track?.isPlaying == true }
-    var liveSessions: [AgentSession] { settings.agentSessions ? agents.sessions : [] }
-    var workingCount: Int { settings.agentSessions ? agents.workingCount : 0 }
+    var liveSessions: [AgentSession] { settings.agentSessions ? agents.sessions.filter { settings.showsAgent($0.agent.rawValue) } : [] }
+    var workingCount: Int { liveSessions.filter { $0.state == .working }.count }
 
     var compact: CompactActivity {
-        if settings.agentSessions, let alert = agents.compactAlert { return .alert(alert) }
+        if let alert = liveSessions.first(where: { $0.isAlerting }) { return .alert(alert) }
         if let hud { return .hud(hud) }
 
         let working = workingCount
         switch (isMusicPlaying, working > 0) {
         case (true, true): return .wings(leading: .artwork, trailing: .working(count: working))
         case (true, false): return .wings(leading: .artwork, trailing: .equalizer)
-        case (false, true): return .wings(leading: .agentGlyph(agents.workingAgent ?? .claude), trailing: .working(count: working))
+        case (false, true): return .wings(leading: .agentGlyph(liveSessions.first(where: { $0.state == .working })?.agent ?? .claude), trailing: .working(count: working))
         case (false, false):
             if let end = ambient.timer.endsAt { return .wings(leading: .timer, trailing: .countdown(end)) }
             return .none
@@ -110,7 +110,10 @@ final class IslandModel: ObservableObject {
     var visibleSessions: [AgentSession] { Array(liveSessions.prefix(Self.maxSessionRows)) }
 
     /// Detected agents, including local usage and actionable access errors.
-    var agentsShown: [String] { settings.agentLimits ? usage.activeAgents : [] }
+    var visibleStats: [String: LocalStats] { usage.stats.filter { settings.showsAgent($0.key) } }
+    var visibleUsageIsUrgent: Bool { usage.usage.contains { settings.showsAgent($0.key) && $0.value.limits.contains { $0.percent >= UsageService.urgentThreshold } } }
+
+    var agentsShown: [String] { settings.agentLimits ? usage.activeAgents.filter { settings.showsAgent($0) } : [] }
 
     /// Size of the island body (without the flared top ears).
     var size: CGSize {

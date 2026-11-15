@@ -17,6 +17,8 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 
 | 3 | Remote SSH event receiver, sender and installation guide | ✅ done | 1 | Swift and Python regression tests; build; isolated end-to-end event test | EOF fixed; tests, release build and installed receiver integration passed |
 
+| 4 | Persistent agent visibility selection | ✅ done | 1 | Preferences regression test; build; preview; installed launch | Persistence tests, release build and installed launch pass; native menu click verification unavailable (CUA not authorized) |
+
 ## Contracts
 - Task 1 — OUT: `Sources/NotchLite/UsageService.swift` — shape: queued manual refresh, shorter refresh intervals, failed attempt retry.
 - Task 2 — OUT: `PROGRESS.md` — shape: append-only verification record.

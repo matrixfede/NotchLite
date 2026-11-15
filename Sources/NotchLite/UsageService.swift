@@ -22,7 +22,7 @@ final class UsageService: ObservableObject {
     @Published private(set) var stats: [String: LocalStats] = [:]
     @Published private(set) var isRefreshing = false
 
-    /// Called when a limit crosses 90%: (agent display name, limit).
+    /// Called when a limit crosses 90%: (agent ID, limit).
     var onThreshold: ((String, UsageLimit) -> Void)?
 
     nonisolated static let urgentThreshold = 0.9
@@ -124,7 +124,7 @@ final class UsageService: ObservableObject {
                 for limit in current.limits where limit.percent >= Self.urgentThreshold {
                     let before = previous[id]?.limits.first { $0.label == limit.label }?.percent ?? 0
                     if before < Self.urgentThreshold {
-                        onThreshold?(Collectors.collector(id)?.displayName ?? id, limit)
+                        onThreshold?(id, limit)
                     }
                 }
             }

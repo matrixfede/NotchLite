@@ -238,7 +238,7 @@ private struct ExpandedView: View {
         HStack(spacing: 6) {
             HStack(spacing: 2) {
                 TabButton(title: "Ora", selected: model.tab == .now) { model.select(.now) }
-                TabButton(title: "Agenti", selected: model.tab == .agents, badge: usage.isUrgent) { model.select(.agents) }
+                TabButton(title: "Agenti", selected: model.tab == .agents, badge: model.visibleUsageIsUrgent) { model.select(.agents) }
                 TabButton(title: "Rete", selected: model.tab == .network) { model.select(.network) }
                 TabButton(title: "Sistema", selected: model.tab == .system) { model.select(.system) }
             }
@@ -469,7 +469,7 @@ private struct IdleCard: View {
                     .help("Nuova sessione \(agent.displayName)")
                 }
             }
-            if model.settings.agentSessions, let last = agents.lastFinished {
+            if model.settings.agentSessions, let last = agents.lastFinished, model.settings.showsAgent(last.agent.rawValue) {
                 HStack(spacing: 10) {
                     StateIcon(state: last.state, size: 11)
                         .frame(width: 30)
@@ -537,6 +537,24 @@ private struct SettingsTab: View {
                 }
                 .help("Collega Claude Code e Codex al notch")
             }
+
+            Menu {
+                ForEach(Collectors.all, id: \.id) { collector in
+                    Toggle(collector.displayName, isOn: Binding(
+                        get: { settings.showsAgent(collector.id) },
+                        set: { settings.setAgent(collector.id, visible: $0) }
+                    ))
+                }
+                Divider()
+                Button("Mostra tutti") { settings.hiddenAgents.removeAll() }
+                Button("Nascondi tutti") { settings.hiddenAgents = Set(Collectors.all.map(\.id)) }
+            } label: {
+                Label("Agenti visibili · \(Collectors.all.filter { settings.showsAgent($0.id) }.count)/\(Collectors.all.count)", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Scegli gli agenti da mostrare nelle schede, nei riepiloghi e negli avvisi")
 
             Section(title: "Server locali", add: SettingsActions.addServer) {
                 ForEach(servers.servers) { server in
@@ -892,7 +910,7 @@ private struct AgentsTab: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            HeroLine(stats: usage.stats)
+            HeroLine(stats: model.visibleStats)
             ForEach(model.agentsShown, id: \.self) { id in
                 AgentLimitsBlock(id: id, info: usage.usage[id], stats: usage.stats[id])
             }

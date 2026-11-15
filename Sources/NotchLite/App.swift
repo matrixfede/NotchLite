@@ -89,12 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.model.show(.volume(level: level, muted: muted))
         }
         agents.onAlert = { [weak self] session in
-            guard let self, self.settings.agentSounds, let sound = session.state.soundName else { return }
+            guard let self, self.settings.agentSounds, self.settings.showsAgent(session.agent.rawValue), let sound = session.state.soundName else { return }
             NSSound(named: sound)?.play()
         }
         usage.onThreshold = { [weak self] agent, limit in
-            guard let self, self.settings.agentLimits else { return }
-            self.model.show(.usage(agent: agent, percent: limit.percent), for: 5)
+            guard let self, self.settings.agentLimits,
+                  self.settings.showsAgent(agent) else { return }
+            self.model.show(.usage(agent: Collectors.collector(agent)?.displayName ?? agent, percent: limit.percent), for: 5)
             if self.settings.agentSounds { NSSound(named: "Sosumi")?.play() }
         }
 
@@ -110,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch?.start()
         SettingsActions.servers = ambient.servers
         SettingsActions.onDialog = { [weak self] open in self?.notch?.setHidden(open) }
-        menu = MenuController(usage: usage)
+        menu = MenuController(usage: usage, settings: settings)
 
         applySettings()
         Guide.showIfNeeded()
@@ -133,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.volumeHUD ? volume.start() : volume.stop()
         settings.agentSessions ? agents.start() : agents.stop()
         settings.agentLimits ? usage.start() : usage.stop()
+        AgentService.setHiddenAgents(settings.hiddenAgents)
         AgentService.setApproveFromNotch(settings.agentSessions && settings.approveFromNotch)
         settings.calendar ? ambient.calendar.start() : ambient.calendar.stop()
         settings.privacyDots ? ambient.privacy.start() : ambient.privacy.stop()
@@ -146,49 +148,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@MainActor
-final class Settings: ObservableObject {
-    private let defaults = UserDefaults.standard
-
-    @Published var music: Bool { didSet { defaults.set(music, forKey: "music") } }
-    @Published var battery: Bool { didSet { defaults.set(battery, forKey: "battery") } }
-    @Published var volumeHUD: Bool { didSet { defaults.set(volumeHUD, forKey: "volumeHUD") } }
-    @Published var agentSessions: Bool { didSet { defaults.set(agentSessions, forKey: "agentSessions") } }
-    @Published var agentLimits: Bool { didSet { defaults.set(agentLimits, forKey: "agentLimits") } }
-    @Published var agentSounds: Bool { didSet { defaults.set(agentSounds, forKey: "agentSounds") } }
-    @Published var approveFromNotch: Bool { didSet { defaults.set(approveFromNotch, forKey: "approveFromNotch") } }
-    @Published var calendar: Bool { didSet { defaults.set(calendar, forKey: "calendar") } }
-    @Published var privacyDots: Bool { didSet { defaults.set(privacyDots, forKey: "privacyDots") } }
-    @Published var quickReplies: [String] { didSet { defaults.set(quickReplies, forKey: "quickReplies") } }
-
-    init() {
-        defaults.register(defaults: [
-            "music": true, "battery": true, "volumeHUD": true,
-            "agentSessions": true, "agentLimits": true, "agentSounds": true,
-            "approveFromNotch": true, "calendar": true, "privacyDots": true,
-            "quickReplies": ["Sì, procedi", "Continua", "Esegui i test", "/compact"],
-        ])
-        music = defaults.bool(forKey: "music")
-        battery = defaults.bool(forKey: "battery")
-        volumeHUD = defaults.bool(forKey: "volumeHUD")
-        agentSessions = defaults.bool(forKey: "agentSessions")
-        agentLimits = defaults.bool(forKey: "agentLimits")
-        agentSounds = defaults.bool(forKey: "agentSounds")
-        approveFromNotch = defaults.bool(forKey: "approveFromNotch")
-        calendar = defaults.bool(forKey: "calendar")
-        privacyDots = defaults.bool(forKey: "privacyDots")
-        quickReplies = defaults.stringArray(forKey: "quickReplies") ?? []
-    }
-}
-
 /// Menu-bar icon: only quits the app (settings live in the notch).
 @MainActor
 final class MenuController: NSObject {
     private let usage: UsageService
+    private let settings: Settings
     private var urgentObserver: AnyCancellable?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
-    init(usage: UsageService) {
+    init(usage: UsageService, settings: Settings) {
+        self.settings = settings
         self.usage = usage
         super.init()
         updateIcon(urgent: false)
@@ -198,8 +167,8 @@ final class MenuController: NSObject {
         menu.addItem(quit)
         statusItem.menu = menu
         // Like Omarchy's bar icon: turns urgent when a limit reaches 90%.
-        urgentObserver = usage.$usage.sink { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateIcon(urgent: self?.usage.isUrgent ?? false) } }
+        urgentObserver = usage.$usage.map { _ in () }.merge(with: settings.$hiddenAgents.map { _ in () }).sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { guard let self else { return }; self.updateIcon(urgent: self.usage.usage.contains { self.settings.showsAgent($0.key) && $0.value.limits.contains { $0.percent >= UsageService.urgentThreshold } }) } }
         }
     }
 

@@ -165,6 +165,11 @@ final class AgentService: ObservableObject {
         publish()
     }
 
+    static func setHiddenAgents(_ ids: Set<String>) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? ids.sorted().joined(separator: "\n").write(to: directory.appendingPathComponent("hidden-agents"), atomically: true, encoding: .utf8)
+    }
+
     /// The flag the hook checks before waiting for an answer from the notch.
     static func setApproveFromNotch(_ enabled: Bool) {
         let flag = directory.appendingPathComponent("approve-from-notch")
@@ -487,7 +492,7 @@ enum AgentHooks {
       mkdir -p "$dir/payloads"; payload="$dir/payloads/$$.json"; printf '%s' "$input" > "$payload"
     fi
     if [ "$kind" = approval ] && [ "$(field hook_event_name)" = PermissionRequest ] \
-       && [ -f "$dir/approve-from-notch" ] && pgrep -xq NotchLite; then
+       && [ -f "$dir/approve-from-notch" ] && ! grep -qxF "$agent" "$dir/hidden-agents" 2>/dev/null && pgrep -xq NotchLite; then
       req="$$-$(date +%s)"
     fi
     printf '{"agent":"%s","kind":"%s","session":"%s","cwd":"%s","tool":"%s","app":"%s","pid":"%s","tty":"%s","req":"%s","payload":"%s","ts":%s}\n' \
@@ -496,6 +501,7 @@ enum AgentHooks {
     [ -n "$req" ] || exit 0
     answer="$dir/decisions/$req"; i=0
     while [ $i -lt 600 ]; do
+      if grep -qxF "$agent" "$dir/hidden-agents" 2>/dev/null; then exit 0; fi
       if [ -f "$answer" ]; then
         case "$(cat "$answer")" in
           allow) printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}' ;;

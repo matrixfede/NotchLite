@@ -29,3 +29,9 @@
 - DECIDED: Remote monitoring implementation ready.
 - BLOCKED: Actual SSH enrollment awaits machine details.
 - NEXT: Connect the remote PCs identified by the user.
+
+## 2026-11-15 agent selection
+- DID: Added persisted per-agent visibility menu, show/hide-all actions, filters for sessions/statistics/alerts, and hidden-agent permission hook bypass. Regression tests, release build, shell syntax and installed launch passed; binary hashes match.
+- DECIDED: Default preserves existing visibility. Hidden agents continue collecting data so restoring visibility is immediate.
+- BLOCKED: Native menu click verification unavailable because CUA access to NotchLite was not authorized; ImageRenderer cannot render the native menu.
+- NEXT: None for implementation; user can select agents in Settings.
