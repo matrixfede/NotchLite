@@ -113,7 +113,9 @@ private struct StatsTally {
         stats.promptsToday = promptsToday
         stats.sessionsToday = sessionsToday.count
         stats.topModel = models.max { $0.value < $1.value }?.key
-        stats.busiestDay = tokensByDay.max { $0.value < $1.value }.flatMap { formatter.date(from: $0.key) }
+        stats.tokensByDay = Dictionary(uniqueKeysWithValues: tokensByDay.compactMap { key, tokens in
+            formatter.date(from: key).map { ($0, tokens) }
+        })
         return stats.isEmpty && stats.sessionsToday == 0 ? nil : stats
     }
 }

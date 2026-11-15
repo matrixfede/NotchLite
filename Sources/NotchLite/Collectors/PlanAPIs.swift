@@ -151,7 +151,7 @@ private enum PlanLocal {
         stats.promptsToday = prompts.count
         stats.sessionsToday = sessions.count
         stats.topModel = byModel.max { $0.value < $1.value }?.key
-        stats.busiestDay = byDay.filter { $0.value > 0 }.max { $0.value < $1.value }?.key
+        stats.tokensByDay = byDay
         if !stats.isEmpty { return (stats, true) }
 
         // Nothing this week: any reply ever on these providers still means opencode used them here.

@@ -942,8 +942,8 @@ private struct HeroLine: View {
         if let top = all.max(by: { $0.tokensWeek < $1.tokensWeek })?.topModel {
             lines.append("Modello più usato: \(top)")
         }
-        if let busiest = all.compactMap(\.busiestDay).max() {
-            lines.append("Giorno più intenso: \(busiest.formatted(.dateTime.weekday(.wide).day().month()))")
+        if let busiest = LocalStats.busiestDay(in: all) {
+            lines.append("Giorno più intenso (dati locali): \(busiest.formatted(.dateTime.weekday(.wide).day().month()))")
         }
         return lines
     }

@@ -8,6 +8,7 @@ enum Guide {
     private static let key = "guideHidden"
     private static var window: NSWindow?
     private static var observer: NSObjectProtocol?
+    private static var hidePreference: Box<Bool>?
 
     static func showIfNeeded() {
         if !UserDefaults.standard.bool(forKey: key) { show() }
@@ -21,6 +22,7 @@ enum Guide {
 
     private static func makeWindow() -> NSWindow {
         let hide = Box(UserDefaults.standard.bool(forKey: key))
+        hidePreference = hide
         let hosting = NSHostingView(rootView: GuideView(hide: hide) { window?.close() })
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
                               styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -36,7 +38,8 @@ enum Guide {
         window.center()
         observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
             MainActor.assumeIsolated {
-                UserDefaults.standard.set(hide.value, forKey: key)
+                if let hide = hidePreference { UserDefaults.standard.set(hide.value, forKey: key) }
+                hidePreference = nil
                 if let observer { NotificationCenter.default.removeObserver(observer) }
                 Guide.window = nil
             }

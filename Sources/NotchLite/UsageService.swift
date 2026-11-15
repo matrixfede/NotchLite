@@ -15,7 +15,7 @@ enum Collectors {
 
 /// Subscription limits, balances and local usage for every coding agent on
 /// the Mac, read the way Omarchy's Agents panel reads them. Network checks run
-/// every 10 minutes at most; all collectors run concurrently in the background.
+/// every 2 minutes; all collectors run concurrently in the background.
 @MainActor
 final class UsageService: ObservableObject {
     @Published private(set) var usage: [String: AgentUsage] = [:]
@@ -26,17 +26,20 @@ final class UsageService: ObservableObject {
     var onThreshold: ((String, UsageLimit) -> Void)?
 
     nonisolated static let urgentThreshold = 0.9
-    private let limitsInterval: TimeInterval = 600
-    private let statsInterval: TimeInterval = 180
+    private let limitsInterval: TimeInterval = 120
+    private var pendingForceRefresh = false
+    private var limitsAttemptedAt: Date?
+    private var limitsNeedRetry = false
+    private let statsInterval: TimeInterval = 30
     private var limitsFetchedAt: Date?
     private var statsFetchedAt: Date?
     private var timer: Timer?
     private let queue = DispatchQueue(label: "notchlite.usage", qos: .utility)
     private let indexer = StatsIndexer()
 
-    /// Agents in use: those with limits or a balance to show, in registry order.
+    /// Detected agents with usage or access diagnostics, in registry order.
     var activeAgents: [String] {
-        Collectors.all.map(\.id).filter { usage[$0]?.isActive == true }
+        Collectors.all.map(\.id).filter { usage[$0]?.isActive == true || stats[$0]?.isEmpty == false }
     }
 
     var isUrgent: Bool {
@@ -52,10 +55,10 @@ final class UsageService: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
-        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh(force: false) }
         }
-        timer.tolerance = 20
+        timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         refresh(force: true)
@@ -68,9 +71,14 @@ final class UsageService: ObservableObject {
 
     /// Cheap to call often: each source refreshes only when its data is old.
     func refresh(force: Bool, maxLimitsAge: TimeInterval? = nil) {
-        guard !isRefreshing else { return }
+        guard !isRefreshing else {
+            pendingForceRefresh = pendingForceRefresh || force
+            return
+        }
         let now = Date()
-        let limitsDue = force || limitsFetchedAt.map { now.timeIntervalSince($0) >= (maxLimitsAge ?? limitsInterval) } ?? true
+        let limitsDue = force || (limitsNeedRetry
+            ? limitsAttemptedAt.map { now.timeIntervalSince($0) >= 60 } ?? true
+            : limitsFetchedAt.map { now.timeIntervalSince($0) >= (maxLimitsAge ?? limitsInterval) } ?? true)
         let statsDue = force || statsFetchedAt.map { now.timeIntervalSince($0) >= statsInterval } ?? true
         guard limitsDue || statsDue else { return }
 
@@ -107,7 +115,11 @@ final class UsageService: ObservableObject {
         isRefreshing = false
         let now = Date()
         if let newUsage {
-            limitsFetchedAt = now
+            limitsAttemptedAt = now
+            limitsNeedRetry = newUsage.contains { id, value in
+                value.note != nil && (value.fetchedAt == nil || value.fetchedAt == previous[id]?.fetchedAt)
+            }
+            if !limitsNeedRetry { limitsFetchedAt = now }
             for (id, current) in newUsage {
                 for limit in current.limits where limit.percent >= Self.urgentThreshold {
                     let before = previous[id]?.limits.first { $0.label == limit.label }?.percent ?? 0
@@ -124,6 +136,10 @@ final class UsageService: ObservableObject {
         var merged = indexed ?? stats.filter { $0.key == "claude" || $0.key == "codex" }
         for (id, value) in usage { if let own = value.stats, !own.isEmpty { merged[id] = own } }
         if merged != stats { stats = merged }
+        if pendingForceRefresh {
+            pendingForceRefresh = false
+            refresh(force: true)
+        }
     }
 }
 
@@ -341,11 +357,11 @@ private final class StatsIndexer: @unchecked Sendable {
         for (agent, perDay) in days {
             var stats = LocalStats()
             var models: [String: Int] = [:]
-            var busiest: (String, Int)?
+
             for (day, entry) in perDay where day >= weekStart {
                 stats.tokensWeek += entry.tokens
                 for (model, tokens) in entry.models { models[model, default: 0] += tokens }
-                if entry.tokens > (busiest?.1 ?? 0) { busiest = (day, entry.tokens) }
+                if let date = dayFormatter.date(from: day) { stats.tokensByDay[date] = entry.tokens }
                 if day == today {
                     stats.tokensToday = entry.tokens
                     stats.promptsToday = entry.prompts
@@ -353,7 +369,6 @@ private final class StatsIndexer: @unchecked Sendable {
                 }
             }
             stats.topModel = models.max { $0.value < $1.value }?.key
-            stats.busiestDay = busiest.flatMap { dayFormatter.date(from: $0.0) }
             if !stats.isEmpty { result[agent] = stats }
         }
         return result

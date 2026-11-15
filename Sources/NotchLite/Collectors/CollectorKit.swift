@@ -31,7 +31,17 @@ struct LocalStats: Equatable {
     var promptsToday = 0
     var sessionsToday = 0
     var topModel: String?
-    var busiestDay: Date?
+    var tokensByDay: [Date: Int] = [:]
+
+    static func busiestDay(in stats: [LocalStats]) -> Date? {
+        var totals: [Date: Int] = [:]
+        for value in stats {
+            for (day, tokens) in value.tokensByDay { totals[day, default: 0] += tokens }
+        }
+        return totals.filter { $0.value > 0 }.max {
+            $0.value == $1.value ? $0.key < $1.key : $0.value < $1.value
+        }?.key
+    }
 
     var isEmpty: Bool { tokensWeek == 0 && promptsToday == 0 }
 }
@@ -45,9 +55,8 @@ struct AgentUsage: Equatable {
     var stats: LocalStats? // local usage, for collectors that read it themselves
     var fetchedAt: Date?
 
-    /// In use: something to show in the Agents tab. Agents without limits or
-    /// balance (not signed in, local stats only) only feed the hero line.
-    var isActive: Bool { !limits.isEmpty || balance != nil }
+    /// Keep detected agents visible, including access errors and local-only usage.
+    var isActive: Bool { !limits.isEmpty || balance != nil || note != nil || plan != nil || stats?.isEmpty == false }
 }
 
 /// One subscription / provider. `fetch` runs on a background queue, must be

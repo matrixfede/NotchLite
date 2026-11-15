@@ -109,7 +109,7 @@ final class IslandModel: ObservableObject {
 
     var visibleSessions: [AgentSession] { Array(liveSessions.prefix(Self.maxSessionRows)) }
 
-    /// Only agents in use: those with limits or a balance to show.
+    /// Detected agents, including local usage and actionable access errors.
     var agentsShown: [String] { settings.agentLimits ? usage.activeAgents : [] }
 
     /// Size of the island body (without the flared top ears).

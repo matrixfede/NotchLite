@@ -42,7 +42,7 @@ final class NetworkService: ObservableObject {
     @Published private(set) var speed: SpeedResult?
     @Published private(set) var isTesting = false
 
-    static let internetHost = "1.1.1.1"
+    nonisolated static let internetHost = "1.1.1.1"
     private let store = SCDynamicStoreCreate(nil, "NotchLite" as CFString, nil, nil)
     private var timer: Timer?
     private var ticks = 0
@@ -175,7 +175,7 @@ final class NetworkService: ObservableObject {
         }
     }
 
-    private static let tailscale = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+    nonisolated private static let tailscale = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
     private func readTailnet() {
         guard FileManager.default.isExecutableFile(atPath: Self.tailscale) else { return }
