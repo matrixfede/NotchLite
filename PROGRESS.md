@@ -35,3 +35,9 @@
 - DECIDED: Default preserves existing visibility. Hidden agents continue collecting data so restoring visibility is immediate.
 - BLOCKED: Native menu click verification unavailable because CUA access to NotchLite was not authorized; ImageRenderer cannot render the native menu.
 - NEXT: None for implementation; user can select agents in Settings.
+
+## 2026-11-15 continuous agent selection
+- DID: Replaced the native menu with a persistent in-notch selection panel, scrollable two-column chips, show/hide-all and Done. Release build and existing regression checks passed; installed and relaunched the updated app.
+- DECIDED: SwiftUI disabled menu dismissal is unavailable on macOS (compiler-confirmed); use explicit panel state so selection does not dismiss it.
+- BLOCKED: Real click verification remains unavailable because CUA was not authorized.
+- NEXT: None.

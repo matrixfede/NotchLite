@@ -513,9 +513,37 @@ private struct Ago: View {
 private struct SettingsTab: View {
     @ObservedObject var settings: Settings
     @ObservedObject var servers: ServerMonitor
+    @StateObject private var selectingAgents = Box(false)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if selectingAgents.value {
+                HStack {
+                    Text("Agenti visibili").font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button("Fine") { selectingAgents.value = false }
+                        .keyboardShortcut(.cancelAction)
+                }
+                Text("Le modifiche vengono salvate subito.")
+                    .font(.system(size: 11)).foregroundStyle(secondaryText)
+                ScrollView {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 2), spacing: 6) {
+                        ForEach(Collectors.all, id: \.id) { collector in
+                            ToggleChip(title: collector.displayName, isOn: settings.showsAgent(collector.id)) {
+                                settings.setAgent(collector.id, visible: !settings.showsAgent(collector.id))
+                            }
+                        }
+                    }
+                }
+                .frame(height: 240)
+                HStack {
+                    Button("Mostra tutti") { settings.hiddenAgents.removeAll() }
+                    Button("Nascondi tutti") { settings.hiddenAgents = Set(Collectors.all.map(\.id)) }
+                    Spacer()
+                    Text("\(Collectors.all.filter { settings.showsAgent($0.id) }.count)/\(Collectors.all.count)")
+                        .font(.system(size: 11)).foregroundStyle(secondaryText)
+                }
+            } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                 ToggleChip(title: "Musica", isOn: settings.music) { settings.music.toggle() }
                 ToggleChip(title: "Batteria", isOn: settings.battery) { settings.battery.toggle() }
@@ -538,22 +566,11 @@ private struct SettingsTab: View {
                 .help("Collega Claude Code e Codex al notch")
             }
 
-            Menu {
-                ForEach(Collectors.all, id: \.id) { collector in
-                    Toggle(collector.displayName, isOn: Binding(
-                        get: { settings.showsAgent(collector.id) },
-                        set: { settings.setAgent(collector.id, visible: $0) }
-                    ))
-                }
-                Divider()
-                Button("Mostra tutti") { settings.hiddenAgents.removeAll() }
-                Button("Nascondi tutti") { settings.hiddenAgents = Set(Collectors.all.map(\.id)) }
-            } label: {
+            Button { selectingAgents.value = true } label: {
                 Label("Agenti visibili · \(Collectors.all.filter { settings.showsAgent($0.id) }.count)/\(Collectors.all.count)", systemImage: "line.3.horizontal.decrease.circle")
                     .font(.system(size: 12, weight: .medium))
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .buttonStyle(.plain)
             .help("Scegli gli agenti da mostrare nelle schede, nei riepiloghi e negli avvisi")
 
             Section(title: "Server locali", add: SettingsActions.addServer) {
@@ -573,6 +590,7 @@ private struct SettingsTab: View {
                     .foregroundStyle(secondaryText)
             }
             .buttonStyle(.plain)
+            }
         }
         .foregroundStyle(.white)
     }

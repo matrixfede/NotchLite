@@ -31,3 +31,5 @@ Fix the issues identified in the agent usage audit and publish to GitHub.
 - Remote design: SSH-authenticated one-event receiver with strict input validation; no remote execution actions in UI. Remote PC enrollment awaits host details.
 
 - Deployment: updated Mac app with receiver support. Real remote enrollment and SSH end-to-end verification await the user's PC aliases; no SSH service or keys changed.
+
+- Selection refinement (user, 2026-11-15): persistent in-notch panel with Fine instead of dismissing native menu; build and regression tests passed.
