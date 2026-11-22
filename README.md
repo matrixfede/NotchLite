@@ -9,8 +9,11 @@ del wallpaper, niente framework privati nell'app).
 ## Funzioni
 
 - **Musica**: brano, artwork, avanzamento con seek, precedente/play/successivo.
-  Funziona con qualsiasi sorgente che pubblica il Now Playing di macOS: YouTube
-  Music (app o PWA), Spotify, Apple Music, browser. Clic sull'artwork per aprire il player.
+  Legge tutti i client Now Playing di macOS e distingue la musica dal resto dei
+  media (YouTube Music app o PWA, Spotify, Apple Music…): con **Solo musica**
+  attivo nelle impostazioni ignora video di browser e social (es. X), e i
+  comandi agiscono direttamente sul player musicale. Clic sull'artwork per
+  aprire il player.
 - **Batteria**: pop di collegamento/scollegamento caricatore, avviso sotto il 20%.
 - **HUD volume**: livello e muto (CoreAudio, event-driven).
 - **Sessioni agenti live** (Claude Code e Codex, stile omarchy-spaces): spinner
@@ -29,8 +32,11 @@ del wallpaper, niente framework privati nell'app).
 - **Previsione dei limiti**: "finisce gio 14:00" in arancione se al ritmo
   attuale il limite si esaurisce prima del reset.
 - **Clic su una sessione → la sua scheda** in iTerm2, Ghostty o Terminale (via tty). Negli altri terminali porta in primo piano l'app.
-- **Server di modelli locali**: pallino verde/rosso, controllo ogni minuto.
-  Si aggiungono e rimuovono dall'ingranaggio nel notch → *Server locali*.
+- **Agenti locali** (nella scheda Agenti): stato online/offline e utilizzo in
+  tempo reale ogni 2 s mentre la scheda è aperta (richieste attive/in coda,
+  tok/s, KV cache / slot, modello caricato, GPU e VRAM per TensorFold, vLLM,
+  llama.cpp, SGLang, Ollama). Si aggiungono e rimuovono dalla scheda Agenti o
+  dall'ingranaggio → *Server locali*.
 - **Rete** (scheda accanto a Ora e Agenti, stile pannello Network di Omarchy): Wi-Fi o Ethernet
   con banda, velocità e segnale, ping verso internet (1.1.1.1) e router, velocità
   di ricezione/invio, dati scaricati/caricati, IP e gateway. Lavora solo mentre

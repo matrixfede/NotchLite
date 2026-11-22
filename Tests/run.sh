@@ -13,3 +13,9 @@ swiftc -DDEBUG Sources/NotchLite/RemoteAgentEvent.swift Sources/NotchLite/AgentS
 "$test_dir/session-tests"
 swiftc Sources/NotchLite/Settings.swift Tests/AgentVisibilityTests.swift -o "$test_dir/visibility-tests"
 "$test_dir/visibility-tests"
+
+swiftc Sources/NotchLite/MediaFilter.swift Sources/NotchLite/Settings.swift Tests/MediaFilterTests.swift -o "$test_dir/media-filter-tests"
+"$test_dir/media-filter-tests"
+
+swiftc Sources/NotchLite/ServerTelemetry.swift Tests/ServerTelemetryTests.swift -o "$test_dir/server-telemetry-tests"
+"$test_dir/server-telemetry-tests"

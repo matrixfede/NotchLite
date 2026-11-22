@@ -10,6 +10,8 @@ struct Track: Equatable {
     var rate: Double
     var isPlaying: Bool
     var bundleID: String?
+    var clientKey: String? = nil
+    var appName: String? = nil
 
     var identity: String { "\(title)|\(artist)" }
 
@@ -21,9 +23,9 @@ struct Track: Equatable {
     }
 }
 
-/// Now Playing for every source that reports to macOS (Apple Music, Spotify,
-/// browsers, YouTube Music apps…). Talks to MediaBridge.dylib hosted by
-/// /usr/bin/perl, see Bridge/MediaBridge.m.
+/// Now Playing across macOS media clients (Apple Music, Spotify, YouTube Music
+/// apps/PWAs, browsers…). Talks to MediaBridge.dylib hosted by /usr/bin/perl,
+/// see Bridge/MediaBridge.m, and filters/ranks clients with MediaFilter.
 @MainActor
 final class MediaService: ObservableObject {
     @Published private(set) var track: Track?
@@ -33,13 +35,34 @@ final class MediaService: ObservableObject {
     @Published private(set) var lastTrack: Track? = MediaService.storedLastTrack()
     @Published private(set) var lastArtwork: NSImage?
 
+    /// When true, ignores browsers, social media, and video players so only
+    /// dedicated music apps appear in the notch.
+    var musicOnly: Bool = true {
+        didSet {
+            guard oldValue != musicOnly else { return }
+            reselect()
+        }
+    }
+
+    var visibleLastTrack: Track? {
+        guard let lastTrack else { return nil }
+        if musicOnly, !MediaFilter.isMusicSource(bundleID: lastTrack.bundleID, appName: lastTrack.appName ?? "") {
+            return nil
+        }
+        return lastTrack
+    }
+
     private var process: Process?
     private var input: FileHandle?
     private var buffer = Data()
     private var running = false
     private var restartDelay: TimeInterval = 1
     private var restartWork: DispatchWorkItem?
-    private var artworkIdentity: String?
+    private var latestCandidates: [MediaCandidate] = []
+    private var activeArtworkKey: String?
+    private var artworkCache: [String: (image: NSImage, tint: NSColor)] = [:]
+    private var artworkCacheOrder: [String] = []
+    private static let maxCachedArtworks = 16
 
     func start() {
         guard !running else { return }
@@ -55,9 +78,10 @@ final class MediaService: ObservableObject {
         process = nil
         input = nil
         buffer.removeAll()
+        latestCandidates.removeAll()
         track = nil
         artwork = nil
-        artworkIdentity = nil
+        activeArtworkKey = nil
     }
 
     #if DEBUG
@@ -73,7 +97,7 @@ final class MediaService: ObservableObject {
 
     func togglePlayPause() {
         guard var current = track else { return }
-        send(current.isPlaying ? "pause" : "play")
+        sendCommand(current.isPlaying ? "pause" : "play", clientKey: current.clientKey)
         // Optimistic update so the UI reacts instantly.
         current.elapsed = current.position(at: Date())
         current.timestamp = Date()
@@ -81,48 +105,81 @@ final class MediaService: ObservableObject {
         track = current
     }
 
-    func next() { send("next") }
-    func previous() { send("previous") }
+    func next() { sendCommand("next", clientKey: track?.clientKey) }
+    func previous() { sendCommand("previous", clientKey: track?.clientKey) }
 
     func seek(toFraction fraction: Double) {
         guard var current = track, current.duration > 0 else { return }
         let seconds = current.duration * min(max(fraction, 0), 1)
-        send(String(format: "seek %.2f", seconds))
+        let base = String(format: "seek %.2f", seconds)
+        if let key = current.clientKey, !key.isEmpty {
+            send("\(base) \(key)")
+        } else {
+            send(base)
+        }
         current.elapsed = seconds
         current.timestamp = Date()
         track = current
     }
 
-    /// Plays the last track again: the play command when its app is still
-    /// open, otherwise just reopens the app.
+    /// Plays the last track again: targets its client/bundle when the app is
+    /// still open, otherwise reopens the app.
     func resumeLast() {
-        guard let bundleID = lastTrack?.bundleID else { return }
+        guard let last = visibleLastTrack, let bundleID = last.bundleID else { return }
+        if let matching = latestCandidates.first(where: { $0.bundleID?.lowercased() == bundleID.lowercased() }) {
+            sendCommand("play", clientKey: matching.clientKey)
+            return
+        }
         if NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty,
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         } else {
-            send("play")
+            send("playBundle \(bundleID)")
         }
     }
 
     private func remember(_ track: Track) {
+        if musicOnly, !MediaFilter.isMusicSource(bundleID: track.bundleID, appName: track.appName ?? "") {
+            return
+        }
         lastTrack = track
         lastArtwork = artwork
-        UserDefaults.standard.set(["title": track.title, "artist": track.artist, "bundleID": track.bundleID ?? ""],
-                                  forKey: "lastTrack")
+        UserDefaults.standard.set([
+            "title": track.title,
+            "artist": track.artist,
+            "bundleID": track.bundleID ?? "",
+            "appName": track.appName ?? "",
+        ], forKey: "lastTrack")
     }
 
     private static func storedLastTrack() -> Track? {
         guard let entry = UserDefaults.standard.dictionary(forKey: "lastTrack") as? [String: String],
               let title = entry["title"], let bundleID = entry["bundleID"], !bundleID.isEmpty else { return nil }
-        return Track(title: title, artist: entry["artist"] ?? "", duration: 0, elapsed: 0, timestamp: Date(),
-                     rate: 1, isPlaying: false, bundleID: bundleID)
+        return Track(
+            title: title,
+            artist: entry["artist"] ?? "",
+            duration: 0,
+            elapsed: 0,
+            timestamp: Date(),
+            rate: 1,
+            isPlaying: false,
+            bundleID: bundleID,
+            appName: entry["appName"]
+        )
     }
 
     func openPlayer() {
         guard let bundleID = track?.bundleID,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private func sendCommand(_ command: String, clientKey: String?) {
+        if let key = clientKey, !key.isEmpty {
+            send("\(command) \(key)")
+        } else {
+            send(command)
+        }
     }
 
     private func send(_ command: String) {
@@ -215,46 +272,138 @@ final class MediaService: ObservableObject {
     }
 
     private func handle(_ message: [String: Any]) {
-        guard message["type"] as? String == "track",
-              let title = message["title"] as? String else {
-            if let track { remember(track) }
+        guard let type = message["type"] as? String else { return }
+
+        switch type {
+        case "clients":
+            let rawItems = message["items"] as? [[String: Any]] ?? []
+            var parsed: [MediaCandidate] = []
+            parsed.reserveCapacity(rawItems.count)
+            for item in rawItems {
+                guard let candidate = parseCandidate(item) else { continue }
+                parsed.append(candidate)
+                if let artKey = candidate.artworkKey, let base64 = item["artwork"] as? String {
+                    decodeAndCacheArtwork(base64, forKey: artKey)
+                }
+            }
+            latestCandidates = parsed
+            reselect()
+
+        case "track":
+            // Legacy single-track fallback format.
+            if let candidate = parseCandidate(message) {
+                if let artKey = candidate.artworkKey, let base64 = message["artwork"] as? String {
+                    decodeAndCacheArtwork(base64, forKey: artKey)
+                }
+                latestCandidates = [candidate]
+            } else {
+                latestCandidates = []
+            }
+            reselect()
+
+        default:
+            latestCandidates = []
+            reselect()
+        }
+    }
+
+    private func parseCandidate(_ item: [String: Any]) -> MediaCandidate? {
+        guard let title = item["title"] as? String, !title.isEmpty else { return nil }
+        let artist = item["artist"] as? String ?? ""
+        let pid = Int32(item["pid"] as? Int ?? 0)
+        let bundleID = item["bundleID"] as? String
+        let rawBundleID = item["rawBundleID"] as? String
+        let clientKey = (item["clientKey"] as? String) ?? "\(pid)|\(rawBundleID ?? bundleID ?? "")"
+        let timestamp = (item["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
+        let lastPlayingDate = (item["lastPlayingDate"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        let artworkKey = (item["artworkKey"] as? String) ?? (item["artwork"] != nil ? "\(title)|\(artist)" : nil)
+
+        return MediaCandidate(
+            clientKey: clientKey,
+            pid: pid,
+            bundleID: bundleID,
+            rawBundleID: rawBundleID,
+            appName: item["appName"] as? String ?? "",
+            title: title,
+            artist: artist,
+            album: item["album"] as? String ?? "",
+            duration: item["duration"] as? Double ?? 0,
+            elapsed: item["elapsed"] as? Double ?? 0,
+            timestamp: timestamp,
+            rate: item["rate"] as? Double ?? 1,
+            isPlaying: item["playing"] as? Bool ?? false,
+            lastPlayingDate: lastPlayingDate,
+            mediaType: item["mediaType"] as? String,
+            isMusicApp: item["isMusicApp"] as? Bool ?? false,
+            isGlobal: item["isGlobal"] as? Bool ?? false,
+            artworkKey: artworkKey
+        )
+    }
+
+    private func reselect() {
+        guard let selected = MediaFilter.select(from: latestCandidates, musicOnly: musicOnly) else {
+            if let current = track { remember(current) }
             track = nil
             artwork = nil
-            artworkIdentity = nil
+            tint = .white
+            activeArtworkKey = nil
             return
         }
 
-        let timestamp = (message["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
         let next = Track(
-            title: title,
-            artist: message["artist"] as? String ?? "",
-            duration: message["duration"] as? Double ?? 0,
-            elapsed: message["elapsed"] as? Double ?? 0,
-            timestamp: timestamp,
-            rate: message["rate"] as? Double ?? 1,
-            isPlaying: message["playing"] as? Bool ?? false,
-            bundleID: message["bundleID"] as? String
+            title: selected.title,
+            artist: selected.artist,
+            duration: selected.duration,
+            elapsed: selected.elapsed,
+            timestamp: selected.timestamp,
+            rate: selected.rate,
+            isPlaying: selected.isPlaying,
+            bundleID: selected.bundleID,
+            clientKey: selected.clientKey,
+            appName: selected.appName
         )
 
-        if next.identity != artworkIdentity, message["artwork"] == nil {
+        let previousArtworkKey = activeArtworkKey
+        if next != track { track = next }
+
+        activeArtworkKey = selected.artworkKey
+        if let artKey = selected.artworkKey {
+            if let cached = artworkCache[artKey] {
+                artwork = cached.image
+                tint = cached.tint
+            } else if previousArtworkKey != artKey {
+                artwork = nil
+                tint = .white
+            }
+        } else {
             artwork = nil
             tint = .white
         }
-        if next != track { track = next }
+    }
 
-        if let base64 = message["artwork"] as? String {
-            let identity = next.identity
-            artworkIdentity = identity
-            DispatchQueue.global(qos: .userInitiated).async {
-                let decoded = Self.decodeArtwork(base64)
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { [weak self] in
-                        guard let self, self.artworkIdentity == identity else { return }
-                        self.artwork = decoded?.image
-                        self.tint = decoded?.tint ?? .white
+    private func decodeAndCacheArtwork(_ base64: String, forKey artKey: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let decoded = Self.decodeArtwork(base64)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self, let decoded else { return }
+                    self.storeCachedArtwork(decoded, forKey: artKey)
+                    if self.activeArtworkKey == artKey {
+                        self.artwork = decoded.image
+                        self.tint = decoded.tint
                     }
                 }
             }
+        }
+    }
+
+    private func storeCachedArtwork(_ decoded: (image: NSImage, tint: NSColor), forKey key: String) {
+        artworkCache[key] = decoded
+        artworkCacheOrder.removeAll { $0 == key }
+        artworkCacheOrder.append(key)
+        while artworkCacheOrder.count > Self.maxCachedArtworks {
+            let oldest = artworkCacheOrder.removeFirst()
+            artworkCache.removeValue(forKey: oldest)
         }
     }
 

@@ -16,6 +16,7 @@ final class Settings: ObservableObject {
     }
 
     @Published var music: Bool { didSet { defaults.set(music, forKey: "music") } }
+    @Published var musicOnly: Bool { didSet { defaults.set(musicOnly, forKey: "musicOnly") } }
     @Published var battery: Bool { didSet { defaults.set(battery, forKey: "battery") } }
     @Published var volumeHUD: Bool { didSet { defaults.set(volumeHUD, forKey: "volumeHUD") } }
     @Published var agentSessions: Bool { didSet { defaults.set(agentSessions, forKey: "agentSessions") } }
@@ -30,12 +31,13 @@ final class Settings: ObservableObject {
         self.defaults = defaults
         hiddenAgents = Set(defaults.stringArray(forKey: "hiddenAgents") ?? [])
         defaults.register(defaults: [
-            "music": true, "battery": true, "volumeHUD": true,
+            "music": true, "musicOnly": true, "battery": true, "volumeHUD": true,
             "agentSessions": true, "agentLimits": true, "agentSounds": true,
             "approveFromNotch": true, "calendar": true, "privacyDots": true,
             "quickReplies": ["Sì, procedi", "Continua", "Esegui i test", "/compact"],
         ])
         music = defaults.bool(forKey: "music")
+        musicOnly = defaults.bool(forKey: "musicOnly")
         battery = defaults.bool(forKey: "battery")
         volumeHUD = defaults.bool(forKey: "volumeHUD")
         agentSessions = defaults.bool(forKey: "agentSessions")

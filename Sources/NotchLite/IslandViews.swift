@@ -189,7 +189,7 @@ private struct ExpandedView: View {
             header
             Group {
                 if model.tab == .agents {
-                    AgentsTab(model: model, usage: usage)
+                    AgentsTab(model: model, usage: usage, servers: model.ambient.servers)
                 } else if model.tab == .system {
                     SystemTab(stats: model.ambient.system, battery: battery)
                 } else if model.tab == .network {
@@ -229,7 +229,7 @@ private struct ExpandedView: View {
             }
             TimerRow(timer: model.ambient.timer)
             ShelfRow(shelf: model.ambient.shelf)
-            InfoStrip(calendar: model.ambient.calendar, servers: model.ambient.servers)
+            InfoStrip(calendar: model.ambient.calendar)
         }
     }
 
@@ -244,7 +244,10 @@ private struct ExpandedView: View {
             }
             Spacer(minLength: model.notchSize.width + 12)
             if model.tab == .agents {
-                ControlButton(symbol: "arrow.clockwise", size: 11) { usage.refresh(force: true) }
+                ControlButton(symbol: "arrow.clockwise", size: 11) {
+                    usage.refresh(force: true)
+                    model.ambient.servers.refreshNow()
+                }
                     .opacity(usage.isRefreshing ? 0.4 : 1)
                     .help("Aggiorna")
                 Menu {
@@ -449,7 +452,7 @@ private struct IdleCard: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                if model.settings.music, let track = media.lastTrack {
+                if model.settings.music, let track = media.visibleLastTrack {
                     Artwork(image: media.lastArtwork, size: 30, corner: 6)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(track.title).font(.system(size: 12, weight: .semibold))
@@ -546,6 +549,8 @@ private struct SettingsTab: View {
             } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                 ToggleChip(title: "Musica", isOn: settings.music) { settings.music.toggle() }
+                ToggleChip(title: "Solo musica", isOn: settings.musicOnly) { settings.musicOnly.toggle() }
+                    .help("Mostra solo app musicali e ignora video di browser e social")
                 ToggleChip(title: "Batteria", isOn: settings.battery) { settings.battery.toggle() }
                 ToggleChip(title: "HUD volume", isOn: settings.volumeHUD) { settings.volumeHUD.toggle() }
                 ToggleChip(title: "Sessioni agenti", isOn: settings.agentSessions) { settings.agentSessions.toggle() }
@@ -925,6 +930,7 @@ private struct TimerRow: View {
 private struct AgentsTab: View {
     @ObservedObject var model: IslandModel
     @ObservedObject var usage: UsageService
+    @ObservedObject var servers: ServerMonitor
 
     var body: some View {
         VStack(spacing: 10) {
@@ -932,13 +938,173 @@ private struct AgentsTab: View {
             ForEach(model.agentsShown, id: \.self) { id in
                 AgentLimitsBlock(id: id, info: usage.usage[id], stats: usage.stats[id])
             }
-            if model.agentsShown.isEmpty {
+            if !servers.servers.isEmpty {
+                LocalServersSection(servers: servers)
+            }
+            if model.agentsShown.isEmpty && servers.servers.isEmpty {
                 Text(usage.isRefreshing ? "Lettura dei limiti…" : "Nessun agente rilevato")
                     .font(.system(size: 12))
                     .foregroundStyle(secondaryText)
             }
         }
         .foregroundStyle(.white)
+        .onAppear { servers.setLive(true) }
+        .onDisappear { servers.setLive(false) }
+    }
+}
+
+/// Real-time status & usage for local model servers inside the Agenti tab.
+private struct LocalServersSection: View {
+    @ObservedObject var servers: ServerMonitor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Agenti locali")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(secondaryText)
+                Spacer()
+                ControlButton(symbol: "plus", size: 9) { SettingsActions.addServer() }
+                    .help("Aggiungi server locale")
+            }
+            ForEach(servers.servers) { server in
+                LocalServerBlock(server: server)
+            }
+        }
+    }
+}
+
+private struct LocalServerBlock: View {
+    let server: ServerStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 7, height: 7)
+                Text(server.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                if let model = server.telemetry?.model,
+                   model.caseInsensitiveCompare(server.name) != .orderedSame {
+                    Text(model)
+                        .font(.system(size: 11))
+                        .foregroundStyle(secondaryText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Text(statusBadge)
+                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(badgeColor)
+                    .lineLimit(1)
+            }
+            .frame(height: 18)
+
+            if server.isUp == true, let detail = detailLine {
+                Text(detail)
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    .frame(height: 15)
+            }
+
+            if server.isUp == true, let meter = server.telemetry?.usageMeter {
+                HStack(spacing: 8) {
+                    Text(meter.label)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .frame(width: 130, alignment: .leading)
+                    LevelBar(value: meter.percent, color: meterColor(meter.percent))
+                        .frame(height: 5)
+                    Text("\(Int((meter.percent * 100).rounded(.down)))%")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .frame(width: 36, alignment: .trailing)
+                    Text(rightMeterLabel)
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundStyle(server.telemetry?.isBusy == true ? .cyan : .white.opacity(0.4))
+                        .frame(width: 74, alignment: .trailing)
+                        .lineLimit(1)
+                }
+                .frame(height: 18)
+            }
+        }
+        .help(server.url.absoluteString)
+    }
+
+    private var statusColor: Color {
+        guard let up = server.isUp else { return .gray }
+        if !up { return .red }
+        if server.telemetry?.warming == true { return .orange }
+        if server.telemetry?.isBusy == true { return .cyan }
+        return .green
+    }
+
+    private var badgeColor: Color {
+        guard let up = server.isUp else { return secondaryText }
+        if !up { return .red.opacity(0.85) }
+        if server.telemetry?.warming == true { return .orange }
+        if server.telemetry?.isBusy == true { return .cyan }
+        return .green.opacity(0.9)
+    }
+
+    private var statusBadge: String {
+        guard let up = server.isUp else { return "controllo…" }
+        guard up else { return "offline" }
+        guard let t = server.telemetry else { return "online" }
+        if t.warming { return "avvio…" }
+        var parts: [String] = []
+        if let active = t.activeRequests, active > 0 {
+            parts.append(active == 1 ? "1 attiva" : "\(active) attive")
+        }
+        if let waiting = t.waitingRequests, waiting > 0 {
+            parts.append("+\(waiting) coda")
+        }
+        if let dec = t.decodeTokensPerSecond, dec >= 0.1 {
+            parts.append(String(format: "%.1f tok/s", dec))
+        } else if let pre = t.prefillTokensPerSecond, pre >= 0.1 {
+            parts.append(String(format: "prefill %.0f tok/s", pre))
+        }
+        if !parts.isEmpty { return parts.joined(separator: " · ") }
+        return "in attesa"
+    }
+
+    private var detailLine: String? {
+        guard let t = server.telemetry else { return nil }
+        var parts: [String] = []
+        if let device = t.device { parts.append(device) }
+        if let mem = t.memoryUsedBytes, mem > 0 {
+            if let total = t.memoryTotalBytes, total > 0 {
+                parts.append(String(format: "%.1f / %.1f GB VRAM", Double(mem) / 1_073_741_824, Double(total) / 1_073_741_824))
+            } else {
+                parts.append(String(format: "%.1f GB VRAM", Double(mem) / 1_073_741_824))
+            }
+        }
+        if let active = t.activeRequests, let maxBatch = t.maxBatchSize, maxBatch > 0 {
+            parts.append("slot \(active)/\(maxBatch)")
+        }
+        if let total = t.totalTokens, total > 0 {
+            parts.append("\(compactNumber(total)) token")
+        }
+        if let ms = t.latencyMs {
+            parts.append("\(ms) ms")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var rightMeterLabel: String {
+        guard let t = server.telemetry else { return "" }
+        if let dec = t.decodeTokensPerSecond, dec >= 0.1 {
+            return String(format: "%.1f t/s", dec)
+        }
+        if let active = t.activeRequests, let maxBatch = t.maxBatchSize, maxBatch > 0 {
+            return "\(active)/\(maxBatch) slot"
+        }
+        if let active = t.activeRequests {
+            return active == 0 ? "libero" : "\(active) att."
+        }
+        return ""
     }
 }
 
@@ -1136,31 +1302,19 @@ private struct ShelfRow: View {
 
 // MARK: Calendar, servers, privacy
 
-/// One line under the "Ora" tab: next event on the left, model servers on the right.
+/// One line under the "Ora" tab: next calendar event.
 private struct InfoStrip: View {
     @ObservedObject var calendar: CalendarService
-    @ObservedObject var servers: ServerMonitor
 
     var body: some View {
-        if calendar.next != nil || !servers.servers.isEmpty {
+        if let event = calendar.next {
             HStack(spacing: 10) {
-                if let event = calendar.next {
-                    Circle().fill(Color(nsColor: event.color)).frame(width: 7, height: 7)
-                    TimelineView(.everyMinute) { context in
-                        Text("\(when(event, now: context.date)) · \(event.title)")
-                    }
-                    .lineLimit(1)
+                Circle().fill(Color(nsColor: event.color)).frame(width: 7, height: 7)
+                TimelineView(.everyMinute) { context in
+                    Text("\(when(event, now: context.date)) · \(event.title)")
                 }
-                Spacer(minLength: 8)
-                ForEach(servers.servers) { server in
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(server.isUp == nil ? Color.gray : server.isUp! ? .green : .red)
-                            .frame(width: 6, height: 6)
-                        Text(server.name)
-                    }
-                    .help(server.url.absoluteString)
-                }
+                .lineLimit(1)
+                Spacer(minLength: 0)
             }
             .font(.system(size: 11))
             .foregroundStyle(.white.opacity(0.75))

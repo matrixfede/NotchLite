@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applySettings() {
+        media.musicOnly = settings.musicOnly
         settings.music ? media.start() : media.stop()
         settings.volumeHUD ? volume.start() : volume.stop()
         settings.agentSessions ? agents.start() : agents.stop()
@@ -193,10 +194,10 @@ enum SettingsActions {
                                                 placeholders: ["Nome (es. Qwen)", "Indirizzo (es. http://192.168.1.10:8080)"]) else { return }
         var text = values[1]
         if !text.contains("://") { text = "http://" + text }
-        guard let url = URL(string: text), url.host != nil, ["http", "https"].contains(url.scheme ?? "") else {
+        guard let url = URL(string: text), url.host != nil, ["http", "https", "ssh"].contains(url.scheme ?? "") else {
             let error = NSAlert()
             error.messageText = "Indirizzo non valido"
-            error.informativeText = "Usa un indirizzo come http://192.168.1.10:8080"
+            error.informativeText = "Usa un indirizzo come http://192.168.1.10:8080 oppure ssh://utente@host:8188"
             present(error)
             return
         }

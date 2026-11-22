@@ -60,19 +60,34 @@ struct ServerStatus: Identifiable, Equatable {
     let name: String
     let url: URL
     var isUp: Bool?
+    var telemetry: ServerTelemetry? = nil
+    var checkedAt: Date? = nil
 }
 
-/// Pings the local model servers once a minute, right after a network change
-/// (Tailscale on/off, another Wi-Fi) and when the notch opens; any HTTP answer
-/// counts as up. The list is edited from the notch settings.
+/// Pings the local model servers once a minute (and every 2 seconds while the
+/// Agenti tab is open for real-time telemetry: active requests, KV cache, tok/s,
+/// loaded model and VRAM). The list is edited from the notch settings.
 @MainActor
 final class ServerMonitor: ObservableObject {
     @Published private(set) var servers: [ServerStatus] = []
 
+    private struct Capabilities {
+        var supportsHealth = true
+        var supportsMetrics = true
+        var supportsSlots = true
+        var supportsOllamaPS = true
+        var supportsComfyUI = true
+        var cachedModel: String?
+    }
+
     private static let key = "servers"
     private var timer: Timer?
+    private var liveTimer: Timer?
     private var path: NWPathMonitor?
     private var checkedAt = Date.distantPast
+    private var isChecking = false
+    private var isLive = false
+    private var capabilities: [String: Capabilities] = [:]
 
     init() {
         importLegacyFile()
@@ -82,23 +97,45 @@ final class ServerMonitor: ObservableObject {
     func start() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.check() }
+            MainActor.assumeIsolated { self?.check(forceOffline: true) }
         }
         timer.tolerance = 15
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         let path = NWPathMonitor()
         path.pathUpdateHandler = { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.check() } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.check(forceOffline: true) } }
         }
         path.start(queue: .global(qos: .utility))
         self.path = path
-        check()
+        check(forceOffline: true)
+    }
+
+    /// Enables 2-second real-time polling while the Agenti tab is visible.
+    func setLive(_ live: Bool) {
+        guard live != isLive else { return }
+        isLive = live
+        liveTimer?.invalidate()
+        liveTimer = nil
+        if live {
+            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.check(forceOffline: false) }
+            }
+            timer.tolerance = 0.4
+            RunLoop.main.add(timer, forMode: .common)
+            self.liveTimer = timer
+            check(forceOffline: true)
+        }
+    }
+
+    func refreshNow() {
+        capabilities.removeAll()
+        check(forceOffline: true)
     }
 
     /// The notch opened: refresh unless the last answer is fresh.
     func checkIfStale() {
-        if Date().timeIntervalSince(checkedAt) > 15 { check() }
+        if Date().timeIntervalSince(checkedAt) > 15 { check(forceOffline: true) }
     }
 
     func add(name: String, url: URL) {
@@ -113,24 +150,218 @@ final class ServerMonitor: ObservableObject {
 
     private func save(_ entries: [ServerStatus]) {
         UserDefaults.standard.set(entries.map { ["name": $0.name, "url": $0.url.absoluteString] }, forKey: Self.key)
+        capabilities.removeAll()
         servers = entries
-        check()
+        check(forceOffline: true)
     }
 
-    private func check() {
+    private func check(forceOffline: Bool) {
         let list = servers
-        guard !list.isEmpty else { return }
-        checkedAt = Date()
+        guard !list.isEmpty, !isChecking else { return }
+        isChecking = true
+        let now = Date()
+        checkedAt = now
+        let capsSnapshot = capabilities
+
         DispatchQueue.global(qos: .utility).async {
-            // 5 s: the first packet through a Tailscale relay can take a few seconds.
-            let results = list.map { ServerStatus(name: $0.name, url: $0.url, isUp: Kit.request($0.url, timeout: 5).status > 0) }
+            let results = Locked([ServerStatus?](repeating: nil, count: list.count))
+            let updatedCaps = Locked(capsSnapshot)
+
+            DispatchQueue.concurrentPerform(iterations: list.count) { index in
+                let server = list[index]
+                // During 2s live polling, re-check offline servers every 10s so an
+                // unreachable host never stalls telemetry for online ones.
+                if !forceOffline, server.isUp == false,
+                   let last = server.checkedAt, now.timeIntervalSince(last) < 10 {
+                    results.mutate { $0[index] = server }
+                    return
+                }
+                let caps = capsSnapshot[server.url.absoluteString] ?? Capabilities()
+                let (nextStatus, nextCaps) = Self.probe(server: server, caps: caps, now: now)
+                results.mutate { $0[index] = nextStatus }
+                updatedCaps.mutate { $0[server.url.absoluteString] = nextCaps }
+            }
+
+            let finalResults = results.value.compactMap { $0 }
+            let finalCaps = updatedCaps.value
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    self.isChecking = false
+                    self.capabilities = finalCaps
                     // Ignore an answer for a list that was edited meanwhile.
-                    if results.map(\.name) == self.servers.map(\.name), results != self.servers { self.servers = results }
+                    if finalResults.map(\.name) == self.servers.map(\.name), finalResults != self.servers {
+                        self.servers = finalResults
+                    }
                 }
             }
         }
+    }
+
+    private nonisolated static func probe(server: ServerStatus, caps initialCaps: Capabilities, now: Date) -> (ServerStatus, Capabilities) {
+        var caps = initialCaps
+        if server.url.scheme?.lowercased() == "ssh" {
+            return (probeOverSSH(server: server, now: now), caps)
+        }
+        let base = ServerTelemetryParser.baseURL(from: server.url)
+        let started = Date()
+        var parts: [ServerTelemetry] = []
+        var reached = false
+
+        // 1. Health endpoint (fast status + TensorFold / llama.cpp live JSON)
+        if caps.supportsHealth {
+            let healthURL = base.appendingPathComponent("health")
+            let resp = Kit.request(healthURL, timeout: 2.5)
+            if resp.status > 0 {
+                reached = true
+                if resp.ok, let data = resp.data, let parsed = ServerTelemetryParser.parseHealthJSON(data) {
+                    parts.append(parsed)
+                } else if resp.status == 404 || resp.status == 405 {
+                    caps.supportsHealth = false
+                }
+            } else {
+                // Transport failure (connection refused / timeout): offline.
+                return (ServerStatus(name: server.name, url: server.url, isUp: false, telemetry: nil, checkedAt: now), caps)
+            }
+        }
+
+        // 2. If /health wasn't supported, try ComfyUI /system_stats or the configured URL directly.
+        if !reached {
+            let resp = Kit.request(server.url, timeout: 2.5)
+            if resp.status > 0 {
+                reached = true
+                if resp.ok, let data = resp.data {
+                    if let parsed = ServerTelemetryParser.parseComfySystemStatsJSON(data) { parts.append(parsed) }
+                    if let parsed = ServerTelemetryParser.parseHealthJSON(data) { parts.append(parsed) }
+                    if let model = ServerTelemetryParser.parseModelsJSON(data) {
+                        var m = ServerTelemetry(); m.model = model; parts.append(m)
+                    }
+                }
+            } else {
+                return (ServerStatus(name: server.name, url: server.url, isUp: false, telemetry: nil, checkedAt: now), caps)
+            }
+        }
+
+        let latencyMs = max(1, Int(Date().timeIntervalSince(started) * 1000))
+
+        // 2b. ComfyUI (/system_stats + /queue) when /health isn't present (e.g. port 8188).
+        if !caps.supportsHealth, caps.supportsComfyUI {
+            let statsResp = Kit.request(base.appendingPathComponent("system_stats"), timeout: 1.5)
+            if statsResp.ok, let data = statsResp.data,
+               let parsed = ServerTelemetryParser.parseComfySystemStatsJSON(data) {
+                parts.append(parsed)
+                let queueResp = Kit.request(base.appendingPathComponent("queue"), timeout: 1.5)
+                if queueResp.ok, let qData = queueResp.data,
+                   let qParsed = ServerTelemetryParser.parseComfyQueueJSON(qData) {
+                    parts.append(qParsed)
+                }
+            } else if statsResp.status == 404 || statsResp.status == 405 {
+                caps.supportsComfyUI = false
+            }
+        }
+
+        let isComfy = parts.contains { $0.backend == "comfyui" }
+
+        // 3. Prometheus /metrics (TensorFold, vLLM, llama.cpp, SGLang)
+        if !isComfy, caps.supportsMetrics {
+            let resp = Kit.request(base.appendingPathComponent("metrics"), timeout: 1.5)
+            if resp.ok, let data = resp.data, let text = String(data: data, encoding: .utf8),
+               let parsed = ServerTelemetryParser.parseMetricsText(text) {
+                parts.append(parsed)
+            } else if resp.status == 404 || resp.status == 405 || resp.status == 403 {
+                caps.supportsMetrics = false
+            }
+        }
+
+        // 4. llama.cpp /slots (only if we don't already have active request counts)
+        let hasActiveInfo = parts.contains { $0.activeRequests != nil || $0.kvCacheRatio != nil }
+        if !isComfy, !hasActiveInfo, caps.supportsSlots {
+            let resp = Kit.request(base.appendingPathComponent("slots"), timeout: 1.5)
+            if resp.ok, let data = resp.data, let parsed = ServerTelemetryParser.parseSlotsJSON(data) {
+                parts.append(parsed)
+            } else if resp.status == 404 || resp.status == 405 || resp.status == 403 {
+                caps.supportsSlots = false
+            }
+        }
+
+        // 5. Ollama /api/ps (only if no model / telemetry yet)
+        let hasModel = parts.contains { $0.model != nil }
+        if !isComfy, !hasModel && !hasActiveInfo && caps.supportsOllamaPS {
+            let resp = Kit.request(base.appendingPathComponent("api/ps"), timeout: 1.5)
+            if resp.ok, let data = resp.data, let parsed = ServerTelemetryParser.parseOllamaPSJSON(data) {
+                parts.append(parsed)
+            } else if resp.status == 404 || resp.status == 405 {
+                caps.supportsOllamaPS = false
+            }
+        }
+
+        // 6. OpenAI-compatible /v1/models (cached once discovered while online)
+        if !isComfy, !parts.contains(where: { $0.model != nil }) {
+            if let cached = caps.cachedModel {
+                var m = ServerTelemetry(); m.model = cached; parts.append(m)
+            } else {
+                let resp = Kit.request(base.appendingPathComponent("v1/models"), timeout: 1.5)
+                if resp.ok, let data = resp.data, let model = ServerTelemetryParser.parseModelsJSON(data) {
+                    caps.cachedModel = model
+                    var m = ServerTelemetry(); m.model = model; parts.append(m)
+                }
+            }
+        } else if let foundModel = parts.compactMap(\.model).first {
+            caps.cachedModel = foundModel
+        }
+
+        let elapsed = server.checkedAt.map { now.timeIntervalSince($0) }
+        var merged = ServerTelemetryParser.merge(parts, previous: server.telemetry, elapsed: elapsed)
+        merged.latencyMs = latencyMs
+        return (ServerStatus(name: server.name, url: server.url, isUp: true, telemetry: merged, checkedAt: now), caps)
+    }
+
+    /// Probes a remote localhost-bound server (`ssh://user@host:port`) in a single
+    /// multiplexed SSH round-trip, supporting ComfyUI, TensorFold, vLLM and llama.cpp.
+    private nonisolated static func probeOverSSH(server: ServerStatus, now: Date) -> ServerStatus {
+        guard let host = server.url.host, !host.isEmpty else {
+            return ServerStatus(name: server.name, url: server.url, isUp: false, telemetry: nil, checkedAt: now)
+        }
+        let target = server.url.user.map { "\($0)@\(host)" } ?? host
+        let port = server.url.port ?? 8188
+        let started = Date()
+        let remoteCmd = """
+        s=$(curl -sf -m 1.5 http://127.0.0.1:\(port)/system_stats 2>/dev/null); \
+        if [ -n "$s" ]; then \
+          printf '<<<COMFY_STATS>>>\\n%s\\n<<<COMFY_QUEUE>>>\\n' "$s"; \
+          curl -sf -m 1.5 http://127.0.0.1:\(port)/queue 2>/dev/null; \
+        else \
+          h=$(curl -sf -m 1.5 http://127.0.0.1:\(port)/health 2>/dev/null); \
+          if [ -n "$h" ]; then \
+            printf '<<<HEALTH>>>\\n%s\\n<<<METRICS>>>\\n' "$h"; \
+            curl -sf -m 1.5 http://127.0.0.1:\(port)/metrics 2>/dev/null; \
+          else \
+            m=$(curl -sf -m 1.5 http://127.0.0.1:\(port)/v1/models 2>/dev/null); \
+            if [ -n "$m" ]; then printf '<<<MODELS>>>\\n%s\\n' "$m"; fi; \
+          fi; \
+        fi
+        """
+        let args = [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=2",
+            "-o", "ControlMaster=auto",
+            "-o", "ControlPersist=60",
+            "-o", "ControlPath=/tmp/notchlite-ssh-%C",
+            target,
+            remoteCmd,
+        ]
+        guard let data = Kit.run("/usr/bin/ssh", args, timeout: 4),
+              let text = String(data: data, encoding: .utf8) else {
+            return ServerStatus(name: server.name, url: server.url, isUp: false, telemetry: nil, checkedAt: now)
+        }
+        let latencyMs = max(1, Int(Date().timeIntervalSince(started) * 1000))
+        let parsed = ServerTelemetryParser.parseSSHProbeOutput(text)
+        guard parsed.isUp else {
+            return ServerStatus(name: server.name, url: server.url, isUp: false, telemetry: nil, checkedAt: now)
+        }
+        let elapsed = server.checkedAt.map { now.timeIntervalSince($0) }
+        var merged = ServerTelemetryParser.merge(parsed.parts, previous: server.telemetry, elapsed: elapsed)
+        merged.latencyMs = latencyMs
+        return ServerStatus(name: server.name, url: server.url, isUp: true, telemetry: merged, checkedAt: now)
     }
 
     private static func stored() -> [ServerStatus] {
