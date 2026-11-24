@@ -62,6 +62,14 @@ struct ServerStatus: Identifiable, Equatable {
     var isUp: Bool?
     var telemetry: ServerTelemetry? = nil
     var checkedAt: Date? = nil
+
+    /// What the Agenti tab shows as the row title: the model the server reports
+    /// while it is up, otherwise the label typed when the server was added (the
+    /// label belongs to the address and goes stale when another model is loaded).
+    var displayName: String {
+        if isUp == true, let model = telemetry?.model, !model.isEmpty { return model }
+        return name
+    }
 }
 
 /// Pings the local model servers once a minute (and every 2 seconds while the

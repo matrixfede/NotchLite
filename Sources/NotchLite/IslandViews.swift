@@ -983,16 +983,9 @@ private struct LocalServerBlock: View {
                 Circle()
                     .fill(statusColor)
                     .frame(width: 7, height: 7)
-                Text(server.name)
+                Text(server.displayName)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                if let model = server.telemetry?.model,
-                   model.caseInsensitiveCompare(server.name) != .orderedSame {
-                    Text(model)
-                        .font(.system(size: 11))
-                        .foregroundStyle(secondaryText)
-                        .lineLimit(1)
-                }
                 Spacer(minLength: 6)
                 Text(statusBadge)
                     .font(.system(size: 10, weight: .semibold).monospacedDigit())
